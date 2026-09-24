@@ -1,11 +1,11 @@
 {
-  "name": "@folia/api-client",
+  "name": "@tane/api-client",
   "version": "0.1.0",
   "private": true,
   "main": "src/index.ts",
   "types": "src/index.ts",
   "dependencies": {
-    "@folia/shared-types": "*"
+    "@tane/shared-types": "*"
   },
   "devDependencies": {
     "typescript": "^5.7.2"

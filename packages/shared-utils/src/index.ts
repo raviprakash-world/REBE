@@ -1,4 +1,4 @@
-// @folia/shared-utils
+// @tane/shared-utils
 //
 // Pure utility functions genuinely shared between apps/web and apps/api.
 // Empty at Phase 0 — apps/web and apps/api currently have no real

@@ -1,5 +1,5 @@
 {
-  "name": "@folia/shared-utils",
+  "name": "@tane/shared-utils",
   "version": "0.1.0",
   "private": true,
   "main": "src/index.ts",
