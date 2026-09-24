@@ -1,0 +1,91 @@
+import { useSearchParams } from 'react-router-dom';
+import { useCallback, useMemo } from 'react';
+import { useLocationStore } from '@/store/locationStore';
+import type { ProductQuery, SortKey } from '@/types/product';
+
+const PAGE_SIZE = 9;
+
+interface FixedFilters {
+  category?: string;
+  sellerId?: string;
+  collection?: string;
+  onSale?: boolean;
+}
+
+/** `fixed` holds filters a page pins (a category page, a storefront, the offers page) that the URL can't change. */
+export function useProductListState(fixed: FixedFilters = {}) {
+  const { category: fixedCategory, sellerId: fixedSellerId, collection: fixedCollection, onSale: fixedOnSale } = fixed;
+  const [searchParams, setSearchParams] = useSearchParams();
+  const locationState = useLocationStore((s) => s.location?.state || undefined);
+  const nearMe = searchParams.get('nearMe') === 'true';
+
+  const filters: ProductQuery = useMemo(
+    () => ({
+      category: fixedCategory ?? searchParams.get('category') ?? undefined,
+      collection: fixedCollection,
+      onSale: fixedOnSale || undefined,
+      minPrice: searchParams.get('minPrice') ? Number(searchParams.get('minPrice')) : undefined,
+      maxPrice: searchParams.get('maxPrice') ? Number(searchParams.get('maxPrice')) : undefined,
+      inStockOnly: searchParams.get('inStock') === 'true',
+      sort: (searchParams.get('sort') as SortKey | null) ?? 'featured',
+      page: searchParams.get('page') ? Number(searchParams.get('page')) : 1,
+      pageSize: PAGE_SIZE,
+      // Marketplace Phase 4 — a storefront page fixes sellerId the same
+      // way a category page fixes category; never taken from the URL,
+      // so a customer can't widen the query past this one seller by
+      // hand-editing query params.
+      sellerId: fixedSellerId,
+      nearMe,
+      shipFromState: nearMe ? locationState : undefined,
+    }),
+    [searchParams, fixedCategory, fixedCollection, fixedOnSale, fixedSellerId, nearMe, locationState]
+  );
+
+  const view = (searchParams.get('view') as 'grid' | 'list') ?? 'grid';
+
+  const updateFilters = useCallback(
+    (next: Partial<ProductQuery>) => {
+      const params = new URLSearchParams(searchParams);
+      Object.entries(next).forEach(([key, value]) => {
+        const paramKey = key === 'inStockOnly' ? 'inStock' : key;
+        if (value === undefined || value === false || value === '') {
+          params.delete(paramKey);
+        } else {
+          params.set(paramKey, String(value));
+        }
+      });
+      // Any filter change resets pagination back to page 1
+      if (!('page' in next)) params.delete('page');
+      setSearchParams(params);
+    },
+    [searchParams, setSearchParams]
+  );
+
+  const setPage = useCallback(
+    (page: number) => {
+      const params = new URLSearchParams(searchParams);
+      params.set('page', String(page));
+      setSearchParams(params);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    },
+    [searchParams, setSearchParams]
+  );
+
+  const setSort = useCallback((sort: SortKey) => updateFilters({ sort }), [updateFilters]);
+  const setView = useCallback(
+    (nextView: 'grid' | 'list') => {
+      const params = new URLSearchParams(searchParams);
+      params.set('view', nextView);
+      setSearchParams(params);
+    },
+    [searchParams, setSearchParams]
+  );
+
+  const resetFilters = useCallback(() => {
+    const params = new URLSearchParams();
+    if (fixedCategory) params.set('category', fixedCategory);
+    setSearchParams(params);
+  }, [fixedCategory, setSearchParams]);
+
+  return { filters, view, updateFilters, setPage, setSort, setView, resetFilters };
+}

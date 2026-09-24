@@ -1,0 +1,240 @@
+import { z } from 'zod';
+import { isValidPostalCode } from '@/utils/region';
+
+export const newsletterSchema = z.object({
+  email: z.string().min(1, 'Enter your email').email('Enter a valid email address'),
+});
+
+export type NewsletterFormValues = z.infer<typeof newsletterSchema>;
+
+// Pragmatic phone check — allows +, spaces, dashes, parens, 7-15 digits.
+// Not full E.164 validation, which needs a real phone-number library.
+// Used by contactSchema only — a "message us" form, not tied to
+// shipping/checkout, so kept loosely international.
+const PHONE_REGEX = /^[+]?[\d\s().-]{7,20}$/;
+
+// P0-F — the address book's phone/alternatePhone previously used the
+// same loose PHONE_REGEX above, which would happily accept a
+// non-Indian number the backend's AddressInputDto (IsPhoneNumber('IN'))
+// then rejects — failing only after a round trip instead of inline.
+// Real Indian mobile numbers: 10 digits, starting 6-9, with an
+// optional +91/0 prefix.
+const INDIA_PHONE_REGEX = /^(?:\+91[\s-]?|0)?[6-9]\d{9}$/;
+
+export const contactSchema = z.object({
+  name: z.string().min(1, 'Enter your name').max(80),
+  email: z.string().min(1, 'Enter your email').email('Enter a valid email address'),
+  phone: z.string().min(1, 'Enter a phone number').regex(PHONE_REGEX, 'Enter a valid phone number'),
+  subject: z.string().min(1, 'Enter a subject').max(120),
+  message: z.string().min(10, 'Message needs at least 10 characters').max(2000),
+});
+
+export type ContactFormValues = z.infer<typeof contactSchema>;
+
+const enquiryBase = {
+  name: z.string().min(1, 'Enter your name').max(100),
+  email: z.string().min(1, 'Enter your email').email('Enter a valid email address'),
+  phone: z.string().min(1, 'Enter a phone number').regex(PHONE_REGEX, 'Enter a valid phone number'),
+  message: z.string().min(10, 'Tell us a little more (at least 10 characters)').max(2000),
+};
+
+export const gardeningEnquirySchema = z.object({
+  ...enquiryBase,
+  city: z.string().min(1, 'Enter your city').max(120),
+  serviceType: z.string().min(1, 'Choose the kind of help you need'),
+});
+export type GardeningEnquiryValues = z.infer<typeof gardeningEnquirySchema>;
+
+export const corporateEnquirySchema = z.object({
+  ...enquiryBase,
+  company: z.string().min(1, 'Enter your company name').max(150),
+  quantity: z
+    .string()
+    .regex(/^\d+$/, 'Enter a whole number')
+    .refine((v) => Number(v) >= 1 && Number(v) <= 100000, 'Enter a number between 1 and 100,000'),
+  occasion: z.string().min(1, 'Choose an occasion'),
+  neededBy: z
+    .string()
+    .refine((v) => v === '' || /^\d{4}-\d{2}-\d{2}$/.test(v), 'Enter a valid date'),
+  city: z.string().max(120),
+});
+export type CorporateEnquiryValues = z.infer<typeof corporateEnquirySchema>;
+
+export const loginSchema = z.object({
+  email: z.string().min(1, 'Enter your email').email('Enter a valid email address'),
+  password: z.string().min(1, 'Enter your password'),
+  rememberMe: z.boolean(),
+});
+
+export type LoginFormValues = z.infer<typeof loginSchema>;
+
+// Practical strength rule: 8+ chars, at least one uppercase letter, one number.
+const PASSWORD_REGEX = /^(?=.*[A-Z])(?=.*\d).{8,}$/;
+
+export const registerSchema = z
+  .object({
+    firstName: z.string().min(1, 'Enter your first name').max(60),
+    lastName: z.string().min(1, 'Enter your last name').max(60),
+    email: z.string().min(1, 'Enter your email').email('Enter a valid email address'),
+    password: z
+      .string()
+      .min(8, 'At least 8 characters')
+      .regex(PASSWORD_REGEX, 'Needs an uppercase letter and a number'),
+    confirmPassword: z.string().min(1, 'Confirm your password'),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords don't match",
+    path: ['confirmPassword'],
+  });
+
+export type RegisterFormValues = z.infer<typeof registerSchema>;
+
+export const forgotPasswordSchema = z.object({
+  email: z.string().min(1, 'Enter your email').email('Enter a valid email address'),
+});
+
+export type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>;
+
+const passwordFieldsSchema = z.object({
+  password: z
+    .string()
+    .min(8, 'At least 8 characters')
+    .regex(PASSWORD_REGEX, 'Needs an uppercase letter and a number'),
+  confirmPassword: z.string().min(1, 'Confirm your password'),
+});
+
+function passwordsMatch(data: { password: string; confirmPassword: string }) {
+  return data.password === data.confirmPassword;
+}
+
+export const resetPasswordSchema = passwordFieldsSchema.refine(passwordsMatch, {
+  message: "Passwords don't match",
+  path: ['confirmPassword'],
+});
+
+export type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>;
+
+// Same password rules as resetPasswordSchema, plus the one field specific to
+// an authenticated change: the current password. Built from the shared base
+// schema above rather than duplicating the password/confirm rules.
+export const changePasswordSchema = passwordFieldsSchema
+  .extend({ currentPassword: z.string().min(1, 'Enter your current password') })
+  .refine(passwordsMatch, { message: "Passwords don't match", path: ['confirmPassword'] });
+
+export type ChangePasswordFormValues = z.infer<typeof changePasswordSchema>;
+
+// --- Address book (Phase 6) ---
+
+export const addressSchema = z
+  .object({
+    fullName: z.string().min(1, 'Enter a full name').max(80),
+    phone: z.string().min(1, 'Enter a phone number').regex(INDIA_PHONE_REGEX, 'Enter a valid Indian phone number'),
+    alternatePhone: z
+      .string()
+      .regex(INDIA_PHONE_REGEX, 'Enter a valid Indian phone number')
+      .optional()
+      .or(z.literal('')),
+    email: z.string().email('Enter a valid email address').optional().or(z.literal('')),
+    companyName: z.string().max(80).optional().or(z.literal('')),
+    addressLine1: z.string().min(1, 'Enter an address').max(120),
+    addressLine2: z.string().max(120).optional().or(z.literal('')),
+    landmark: z.string().max(120).optional().or(z.literal('')),
+    deliveryInstructions: z.string().max(200).optional().or(z.literal('')),
+    city: z.string().min(1, 'Enter a city').max(60),
+    state: z.string().min(1, 'Enter a state or province').max(60),
+    // P0-F — z.string() not z.literal('IN'): a literal type would narrow
+    // AddressFormValues['country'] to exactly "IN", which the wider
+    // Address/AddressInput types (types/address.ts, country: string,
+    // shared by every other address consumer in this app) don't match —
+    // that mismatch is a real type-inference conflict, not a cosmetic
+    // one. The runtime check below enforces the actual constraint either
+    // way; only the inferred TS type differs.
+    country: z.string().min(1, 'Select a country'),
+    postalCode: z.string().min(1, 'Enter a PIN code'),
+    type: z.enum(['home', 'office', 'other']),
+    label: z.string().max(40).optional().or(z.literal('')),
+    preferredTimeSlot: z.enum(['morning', 'afternoon', 'evening', 'anytime']).optional(),
+    isDefaultShipping: z.boolean(),
+    isDefaultBilling: z.boolean(),
+  })
+  .superRefine((data, ctx) => {
+    if (data.country !== 'IN') {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['country'],
+        message: 'Tane currently ships within India only.',
+      });
+    }
+    if (!isValidPostalCode(data.postalCode)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['postalCode'],
+        message: 'Enter a valid 6-digit PIN code.',
+      });
+    }
+  });
+
+export type AddressFormValues = z.infer<typeof addressSchema>;
+
+// --- Payment (Phase 6) ---
+
+// Digits only, spaces stripped before validation, 13-19 digits covers
+// real-world card number lengths without a full Luhn-check dependency.
+const CARD_NUMBER_REGEX = /^\d{13,19}$/;
+const EXPIRY_REGEX = /^(0[1-9]|1[0-2])\/\d{2}$/;
+const CVV_REGEX = /^\d{3,4}$/;
+
+export const cardPaymentSchema = z.object({
+  cardholderName: z.string().min(1, 'Enter the name on the card').max(80),
+  cardNumber: z
+    .string()
+    .min(1, 'Enter a card number')
+    .transform((v) => v.replace(/\s+/g, ''))
+    .refine((v) => CARD_NUMBER_REGEX.test(v), 'Enter a valid card number'),
+  expiry: z.string().min(1, 'Enter the expiry date').regex(EXPIRY_REGEX, 'Use MM/YY format'),
+  cvv: z.string().min(1, 'Enter the CVV').regex(CVV_REGEX, '3 or 4 digits'),
+});
+
+export type CardPaymentFormValues = z.infer<typeof cardPaymentSchema>;
+
+export const savedCardCvvSchema = z.object({ cvv: cardPaymentSchema.shape.cvv });
+export type SavedCardCvvFormValues = z.infer<typeof savedCardCvvSchema>;
+
+const UPI_REGEX = /^[\w.-]+@[\w.-]+$/;
+
+export const upiPaymentSchema = z.object({
+  upiId: z.string().min(1, 'Enter your UPI ID').regex(UPI_REGEX, 'Enter a valid UPI ID (e.g. name@bank)'),
+});
+
+export type UpiPaymentFormValues = z.infer<typeof upiPaymentSchema>;
+
+export const netBankingSchema = z.object({
+  bank: z.string().min(1, 'Select your bank'),
+});
+
+export type NetBankingFormValues = z.infer<typeof netBankingSchema>;
+
+const SLUG_REGEX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+// Kept as validated strings rather than z.coerce.number() — coercion makes
+// a schema's input type (what the form holds) diverge from its output type
+// (what parsing produces), which breaks useForm<T>'s single-type generic.
+// The page converts to a real number only after validation, at submit time.
+const priceString = (label: string) =>
+  z
+    .string()
+    .min(1, `Enter ${label}`)
+    .refine((v) => !isNaN(Number(v)) && Number(v) > 0, `Enter ${label} greater than 0`);
+
+export const adminProductSchema = z.object({
+  slug: z.string().min(1, 'Enter a slug').regex(SLUG_REGEX, 'Lowercase letters, numbers, and hyphens only'),
+  name: z.string().min(1, 'Enter a product name').max(150),
+  price: priceString('a price'),
+  compareAtPrice: z.union([priceString('a compare-at price'), z.literal('')]).optional(),
+  description: z.string().min(1, 'Enter a description').max(4000),
+  categoryId: z.string().min(1, 'Select a category'),
+  badge: z.enum(['New', 'Sale', 'Bestseller', 'Low stock', '']).optional(),
+  careLevel: z.enum(['Easy', 'Moderate', 'Advanced', '']).optional(),
+});
+
+export type AdminProductFormValues = z.infer<typeof adminProductSchema>;

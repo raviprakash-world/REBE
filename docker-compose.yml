@@ -1,0 +1,83 @@
+name: folia
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: folia_app
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-folia_dev_password}
+      POSTGRES_DB: folia_dev
+    ports:
+      - '5432:5432'
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U folia_app -d folia_dev']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - '6379:6379'
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    ports:
+      - '3000:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DATABASE_URL: postgresql://folia_app:${POSTGRES_PASSWORD:-folia_dev_password}@postgres:5432/folia_dev?schema=public
+      REDIS_URL: redis://redis:6379
+      JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?JWT_ACCESS_SECRET must be set — see apps/api/.env.example}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?JWT_REFRESH_SECRET must be set — see apps/api/.env.example}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      # No :? guard, unlike the JWT secrets above — the app boots fine with
+      # these unset (see env.validation.ts's comment), it just can't take a
+      # real card/UPI/net-banking/wallet payment until they're real values.
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+      # Same no-:?-guard reasoning as Razorpay above — the app boots fine
+      # with no Resend key set, it just can't send real emails until it's
+      # a real value.
+      RESEND_API_KEY: ${RESEND_API_KEY:-}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL:-Folia <onboarding@resend.dev>}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:5173}
+      # Same no-:?-guard reasoning as Razorpay/Resend above — the app boots
+      # fine with no Shiprocket account configured; the cart-page shipping
+      # estimate just falls back to a flat-rate heuristic, and the admin
+      # "ship this order" action fails loudly until these are real values.
+      SHIPROCKET_EMAIL: ${SHIPROCKET_EMAIL:-}
+      SHIPROCKET_PASSWORD: ${SHIPROCKET_PASSWORD:-}
+      SHIPROCKET_PICKUP_LOCATION: ${SHIPROCKET_PICKUP_LOCATION:-}
+      SHIPROCKET_PICKUP_PINCODE: ${SHIPROCKET_PICKUP_PINCODE:-}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:3000/api/health/ready']
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+volumes:
+  postgres_data:
+  redis_data:

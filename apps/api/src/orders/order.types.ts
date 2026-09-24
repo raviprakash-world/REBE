@@ -1,0 +1,382 @@
+// See users/user.types.ts's top-of-file comment for why these are hand-written.
+import { deriveRefundStatus } from './refund.util';
+export type DeliveryMethodType = 'STANDARD' | 'EXPRESS' | 'SAME_DAY' | 'PICKUP';
+export type PaymentMethodType =
+  'CREDIT_CARD' | 'DEBIT_CARD' | 'UPI' | 'NET_BANKING' | 'COD' | 'WALLET';
+
+/** Mirrors apps/web/src/data/deliveryMethods.ts's deliveryMethodDefs exactly — same ids, costs, and ETAs. */
+export const DELIVERY_METHOD_DEFS: Record<
+  DeliveryMethodType,
+  { cost: number; etaDays: string }
+> = {
+  STANDARD: { cost: 79, etaDays: '3–5 business days' },
+  EXPRESS: { cost: 199, etaDays: '1–2 business days' },
+  SAME_DAY: { cost: 299, etaDays: 'Today, by 9pm' },
+  PICKUP: { cost: 0, etaDays: 'Ready in 2 hours' },
+};
+
+/** Standard delivery is free once the cart subtotal reaches this. Mirrors apps/web/src/services/deliveryService.ts, so the total the shopper reviews is the total they are charged. */
+export const FREE_STANDARD_SHIPPING_THRESHOLD = 999;
+
+/** The delivery charge for a method at a given cart subtotal (before any coupon). One place, so checkout cannot disagree with what the web shows. */
+export function deliveryCost(
+  method: DeliveryMethodType,
+  subtotal: number,
+): number {
+  return method === 'STANDARD' && subtotal >= FREE_STANDARD_SHIPPING_THRESHOLD
+    ? 0
+    : DELIVERY_METHOD_DEFS[method].cost;
+}
+
+export const TAX_RATE = 0.08; // matches apps/web/src/utils/pricing.ts's TAX_RATE exactly
+
+/** Snapshotted into Order.shippingAddressSnapshot/billingAddressSnapshot as-is at checkout time — this IS apps/web's Address shape (the exact output of addresses/address.types.ts's toPublicAddress), stored verbatim rather than reconstructed later from partial fields. */
+export interface AddressSnapshot {
+  id: string;
+  fullName: string;
+  phone: string;
+  alternatePhone?: string;
+  email?: string;
+  companyName?: string;
+  addressLine1: string;
+  addressLine2?: string;
+  landmark?: string;
+  deliveryInstructions?: string;
+  city: string;
+  state: string;
+  country: string;
+  postalCode: string;
+  type: 'home' | 'office' | 'other';
+  label?: string;
+  preferredTimeSlot?: 'morning' | 'afternoon' | 'evening' | 'anytime';
+  geo?: { lat: number; lng: number; source: 'mock' };
+}
+
+export type OrderStatus =
+  | 'PROCESSING'
+  | 'CONFIRMED'
+  | 'SHIPPED'
+  | 'DELIVERED'
+  | 'CANCELLED'
+  | 'RETURNED'
+  | 'REFUNDED';
+
+const statusToPublic: Record<OrderStatus, string> = {
+  PROCESSING: 'processing',
+  CONFIRMED: 'confirmed',
+  SHIPPED: 'shipped',
+  DELIVERED: 'delivered',
+  CANCELLED: 'cancelled',
+  RETURNED: 'returned',
+  REFUNDED: 'refunded',
+};
+
+const deliveryMethodToPublic: Record<DeliveryMethodType, string> = {
+  STANDARD: 'standard',
+  EXPRESS: 'express',
+  SAME_DAY: 'same-day',
+  PICKUP: 'pickup',
+};
+
+const paymentMethodToPublic: Record<PaymentMethodType, string> = {
+  CREDIT_CARD: 'credit-card',
+  DEBIT_CARD: 'debit-card',
+  UPI: 'upi',
+  NET_BANKING: 'net-banking',
+  COD: 'cod',
+  WALLET: 'wallet',
+};
+
+/**
+ * Marketplace Phase 16 — a customer-facing view of one OrderSellerGroup
+ * (Phase 5/12). Deliberately narrower than
+ * seller-order.types.ts's PublicSellerOrderGroup: no commissionTotal, no
+ * sellerNote (both seller-private, per that model's own schema comment),
+ * no shippingAddress (the customer already knows their own address).
+ */
+export interface OrderShipmentItemRecord {
+  id: string;
+  productId: string;
+  slug: string;
+  name: string;
+  variantId: string | null;
+  variantLabel: string | null;
+  quantity: number;
+}
+
+export interface OrderShipmentGroupRecord {
+  id: string;
+  seller: { displayName: string } | null;
+  status: OrderStatus;
+  courierId: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  shippedAt: Date | null;
+  deliveredAt: Date | null;
+  items: OrderShipmentItemRecord[];
+}
+
+export interface OrderItemRecord {
+  /** Phase 6D-4H — needed so a customer's return/DOA claim UI can reference a specific line (CreateReturnClaimDto.items[].orderItemId); the field always existed on the underlying OrderItem row, this was just never surfaced in the public order shape before. */
+  id: string;
+  productId: string;
+  slug: string;
+  name: string;
+  categorySlug: string;
+  variantId: string | null;
+  variantLabel: string | null;
+  price: { toNumber(): number };
+  quantity: number;
+}
+
+export interface OrderRecord {
+  id: string;
+  createdAt: Date;
+  status: OrderStatus;
+  items: OrderItemRecord[];
+  subtotal: { toNumber(): number };
+  discount: { toNumber(): number };
+  couponCode: string | null;
+  shippingCost: { toNumber(): number };
+  tax: { toNumber(): number };
+  total: { toNumber(): number };
+  shippingAddressSnapshot: AddressSnapshot;
+  billingAddressSnapshot: AddressSnapshot;
+  deliveryMethod: DeliveryMethodType;
+  estimatedDelivery: string;
+  paymentMethod: PaymentMethodType;
+  /** Always known at creation time (Phase 2): an Order row is only ever created once PaymentsService.confirmAndCreateOrder runs, by which point payment has already resolved — see Order.paymentDisplayLabel's schema comment. */
+  paymentDisplayLabel: string;
+  paymentTransactionId: string;
+  /** Null until an admin actually ships the order (Phase 5) — see the Order.courierId schema comment. */
+  courierId: string | null;
+  trackingNumber: string | null;
+  trackingUrl: string | null;
+  customerNotes: string | null;
+  cancellation?: CancellationRequestRecord | null;
+  /** Phase 6: the real Payment.status, when the caller's query included it — lets toPublicCancellation derive a real refundStatus instead of the elapsed-time simulation. Optional because not every caller needs cancellation detail (and the raw Prisma `include` shape puts this at order.payment.status, not flattened). */
+  payment?: { status: string } | null;
+  /** Marketplace Phase 16 — only present when the caller's query included it (findOneForUser); the order list view has no need for per-seller shipment detail. */
+  sellerGroups?: OrderShipmentGroupRecord[];
+}
+
+/** Matches apps/web/src/types/order.ts's OrderShipmentGroup exactly. */
+export function toPublicOrderShipmentGroup(group: OrderShipmentGroupRecord) {
+  return {
+    id: group.id,
+    sellerName: group.seller?.displayName ?? null,
+    status: statusToPublic[group.status],
+    courierId: group.courierId,
+    trackingNumber: group.trackingNumber,
+    trackingUrl: group.trackingUrl,
+    shippedAt: group.shippedAt ? group.shippedAt.toISOString() : null,
+    deliveredAt: group.deliveredAt ? group.deliveredAt.toISOString() : null,
+    items: group.items.map((item) => ({
+      id: item.id,
+      productId: item.productId,
+      slug: item.slug,
+      name: item.name,
+      variantId: item.variantId,
+      variantLabel: item.variantLabel,
+      quantity: item.quantity,
+    })),
+  };
+}
+
+/**
+ * Matches apps/web/src/types/order.ts's Order exactly. `returnRequest`
+ * (the public field) is always null here, permanently — not just "for a
+ * freshly created order." Order.returnRequest (the DB relation) is the
+ * SAME row Phase 6D's return/DOA claim system reads and writes (see
+ * ReturnRequest's own schema comment: "Phase 6D rewrite of the original
+ * whole-order, always-auto-approved ReturnRequest"); the whole-order
+ * concept this OLD field/toPublicReturn mapping represented — elapsed-
+ * time-simulated refundStatus, no claim type, no resolution — no longer
+ * describes what that row actually means, and would show a real, possibly
+ * still-PENDING or REJECTED claim as a fake "refunded/processing" status.
+ * ReturnsService.getMyClaim (GET /orders/:id/returns, Phase 6D-4H) is the
+ * real, current, purpose-built source for a customer's own claim.
+ */
+export function toPublicOrder(order: OrderRecord) {
+  return {
+    id: order.id,
+    createdAt: order.createdAt.toISOString(),
+    status: statusToPublic[order.status],
+    items: order.items.map((item) => ({
+      id: item.id,
+      productId: item.productId,
+      slug: item.slug,
+      name: item.name,
+      categorySlug: item.categorySlug,
+      variantId: item.variantId,
+      variantLabel: item.variantLabel,
+      price: item.price.toNumber(),
+      quantity: item.quantity,
+    })),
+    subtotal: order.subtotal.toNumber(),
+    discount: order.discount.toNumber(),
+    couponCode: order.couponCode,
+    shippingCost: order.shippingCost.toNumber(),
+    tax: order.tax.toNumber(),
+    total: order.total.toNumber(),
+    shippingAddress: order.shippingAddressSnapshot,
+    billingAddress: order.billingAddressSnapshot,
+    deliveryMethod: deliveryMethodToPublic[order.deliveryMethod],
+    estimatedDelivery: order.estimatedDelivery,
+    payment: {
+      method: paymentMethodToPublic[order.paymentMethod],
+      displayLabel: order.paymentDisplayLabel,
+      transactionId: order.paymentTransactionId,
+    },
+    courierId: order.courierId,
+    trackingNumber: order.trackingNumber,
+    trackingUrl: order.trackingUrl,
+    customerNotes: order.customerNotes,
+    cancellation: order.cancellation
+      ? toPublicCancellation(order.cancellation, order.payment?.status)
+      : null,
+    returnRequest: null,
+    sellerGroups: order.sellerGroups?.map(toPublicOrderShipmentGroup),
+  };
+}
+
+export type CancellationReasonDb =
+  | 'CHANGED_MIND'
+  | 'FOUND_CHEAPER'
+  | 'ORDERED_BY_MISTAKE'
+  | 'SHIPPING_TOO_SLOW'
+  | 'OTHER';
+export type ReturnReasonDb =
+  | 'NO_LONGER_NEEDED'
+  | 'WRONG_ITEM'
+  | 'DAMAGED_IN_TRANSIT'
+  | 'NOT_AS_DESCRIBED'
+  | 'CHANGED_MIND'
+  | 'OTHER'
+  /** Phase 6D — "arrived dead/dying," plant-claim-only. */
+  | 'DOA';
+
+export const CANCELLATION_REASON_TO_DB: Record<string, CancellationReasonDb> = {
+  'changed-mind': 'CHANGED_MIND',
+  'found-cheaper': 'FOUND_CHEAPER',
+  'ordered-by-mistake': 'ORDERED_BY_MISTAKE',
+  'shipping-too-slow': 'SHIPPING_TOO_SLOW',
+  other: 'OTHER',
+};
+
+export const RETURN_REASON_TO_DB: Record<string, ReturnReasonDb> = {
+  'no-longer-needed': 'NO_LONGER_NEEDED',
+  'wrong-item': 'WRONG_ITEM',
+  'damaged-in-transit': 'DAMAGED_IN_TRANSIT',
+  'not-as-described': 'NOT_AS_DESCRIBED',
+  'changed-mind': 'CHANGED_MIND',
+  other: 'OTHER',
+  /** Phase 6D-3 — the new claim-creation endpoint is the first customer-facing input path to accept this. */
+  doa: 'DOA',
+};
+
+const cancellationReasonToPublic: Record<CancellationReasonDb, string> = {
+  CHANGED_MIND: 'changed-mind',
+  FOUND_CHEAPER: 'found-cheaper',
+  ORDERED_BY_MISTAKE: 'ordered-by-mistake',
+  SHIPPING_TOO_SLOW: 'shipping-too-slow',
+  OTHER: 'other',
+};
+
+/** Exported for ReturnsService's admin/customer-facing claim responses (Phase 6D-4A/6D-4H) — the canonical DB-enum-to-public-string mapping for a return/DOA reason. */
+export const returnReasonToPublic: Record<ReturnReasonDb, string> = {
+  NO_LONGER_NEEDED: 'no-longer-needed',
+  WRONG_ITEM: 'wrong-item',
+  DAMAGED_IN_TRANSIT: 'damaged-in-transit',
+  NOT_AS_DESCRIBED: 'not-as-described',
+  CHANGED_MIND: 'changed-mind',
+  OTHER: 'other',
+  DOA: 'doa',
+};
+
+export interface CancellationRequestRecord {
+  reason: CancellationReasonDb;
+  note: string | null;
+  hasRefund: boolean;
+  requestedAt: Date;
+}
+
+const REFUNDED_PAYMENT_STATUSES = new Set(['REFUNDED', 'PARTIALLY_REFUNDED']);
+
+/**
+ * Phase 6: refundStatus is now derived from the real Payment.status when
+ * it's known (requestCancellation synchronously attempts a real refund —
+ * see OrdersService — so by the time this order is re-read, Payment.status
+ * already reflects whatever really happened), not from
+ * refund.util.ts's elapsed-time simulation. That simulation is kept as
+ * the fallback for the rare case a caller didn't include payment.
+ */
+export function toPublicCancellation(
+  c: CancellationRequestRecord,
+  paymentStatus?: string | null,
+) {
+  return {
+    requestedAt: c.requestedAt.toISOString(),
+    reason: cancellationReasonToPublic[c.reason],
+    note: c.note,
+    refundStatus: !c.hasRefund
+      ? null
+      : paymentStatus
+        ? REFUNDED_PAYMENT_STATUSES.has(paymentStatus)
+          ? 'refunded'
+          : 'processing'
+        : deriveRefundStatus(c.requestedAt),
+  };
+}
+
+/** One cart line as reserved at checkout time — carries the exact InventoryItem/StockReservation each line resolved to, so confirmAndCreateOrder commits precisely the same rows checkout reserved, never re-deriving "an" item for the product. */
+export interface CheckoutSnapshotItem {
+  productId: string;
+  slug: string;
+  name: string;
+  categorySlug: string;
+  variantId: string | null;
+  variantLabel: string | null;
+  price: number;
+  quantity: number;
+  inventoryItemId: string;
+  reservationId: string;
+  /** Marketplace Phase 5 — which seller owns this line's product (null =
+   * Tane-owned), captured at checkout time so confirmAndCreateOrder can
+   * group items into OrderSellerGroup rows without re-querying Product
+   * (which could have changed ownership — never, in practice, but this
+   * snapshot's whole purpose is to never depend on that not happening). */
+  sellerId: string | null;
+}
+
+/**
+ * Everything PaymentsService.confirmAndCreateOrder needs to create the real
+ * Order row once a Payment is confirmed — computed once at checkout time
+ * (prices, coupon, shipping, the pre-generated order id, address
+ * snapshots) and persisted verbatim on Payment.checkoutSnapshot until
+ * confirmation reads it back. See that field's own schema.prisma comment
+ * for why this exists at all: Phase 2 moves Order creation to AFTER
+ * payment confirms, so nothing about the order can be computed fresh at
+ * confirmation time — cart contents, prices, and address selections a
+ * customer made at checkout could all have changed by then.
+ *
+ * No courierId/trackingNumber here (Phase 2 had them, deterministically
+ * pre-assigned) — Phase 5 moves real courier assignment to actual ship
+ * time (see Order.courierId's schema comment), which is necessarily
+ * after this snapshot is taken.
+ */
+export interface CheckoutSnapshot {
+  orderId: string;
+  subtotal: number;
+  discount: number;
+  couponCode: string | null;
+  shippingCost: number;
+  tax: number;
+  total: number;
+  estimatedDelivery: string;
+  deliveryMethod: DeliveryMethodType;
+  customerNotes: string | null;
+  shippingAddressSnapshot: AddressSnapshot;
+  billingAddressSnapshot: AddressSnapshot;
+  items: CheckoutSnapshotItem[];
+}

@@ -1,0 +1,26 @@
+import { apiClient } from './apiClient';
+import type { Product, ProductQuery, ProductQueryResult } from '@/types/product';
+
+export async function fetchProducts(query: ProductQuery): Promise<ProductQueryResult> {
+  const params: Record<string, string> = {};
+  if (query.category) params.category = query.category;
+  if (query.onSale) params.onSale = 'true';
+  if (query.collection) params.collection = query.collection;
+  if (query.minPrice !== undefined) params.minPrice = String(query.minPrice);
+  if (query.maxPrice !== undefined) params.maxPrice = String(query.maxPrice);
+  if (query.inStockOnly) params.inStockOnly = 'true';
+  if (query.sort) params.sort = query.sort;
+  if (query.search) params.search = query.search;
+  if (query.sellerId) params.sellerId = query.sellerId;
+  if (query.shipFromState) params.shipFromState = query.shipFromState;
+  params.page = String(query.page ?? 1);
+  params.pageSize = String(query.pageSize ?? 12);
+
+  const { data } = await apiClient.get<ProductQueryResult>('/products', { params });
+  return data;
+}
+
+export async function fetchProductBySlug(slug: string): Promise<Product> {
+  const { data } = await apiClient.get<Product>(`/products/${slug}`);
+  return data;
+}

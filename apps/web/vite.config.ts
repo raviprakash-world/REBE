@@ -1,0 +1,256 @@
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import { defineConfig, loadEnv } from 'vite'
+import path from 'path'
+
+// https://vite.dev/config/
+// Without these, a production build silently falls back to client-side mock
+// behaviour (fabricated orders, local-only cart, mock admin data) even though
+// the deployed API is real. See docs/MANUAL_SETUP_GUIDE.md ("Vercel").
+const REQUIRED_PRODUCTION_FLAGS = [
+  'VITE_REAL_AUTH_API',
+  'VITE_REAL_CATALOG_API',
+  'VITE_REAL_REVIEWS_API',
+  'VITE_REAL_CART_API',
+  'VITE_REAL_WISHLIST_API',
+  'VITE_REAL_ADDRESSES_API',
+  'VITE_REAL_SEARCH_API',
+  'VITE_REAL_RECOMMENDATIONS_API',
+  'VITE_REAL_NOTIFICATIONS_API',
+  'VITE_REAL_COUPONS_API',
+  'VITE_REAL_SHIPPING_API',
+  'VITE_REAL_ORDERS_API',
+  'VITE_REAL_ADMIN_API',
+  'VITE_REAL_SELLERS_API',
+];
+
+export default defineConfig(({ mode, command }) => {
+  const env = loadEnv(mode, process.cwd(), '');
+
+  if (command === 'build' && mode === 'production') {
+    const missing = REQUIRED_PRODUCTION_FLAGS.filter((flag) => env[flag] !== 'true');
+    if (missing.length > 0) {
+      console.warn(
+        `\n\x1b[33m[folia] WARNING: this production build has ${missing.length} mock-mode flag(s) OFF:\n  ${missing.join('\n  ')}\n` +
+          `The deployed site will use client-side mock behaviour for those areas (for example, checkout would fabricate orders). ` +
+          `Set them to "true" in the host's environment variables — see docs/MANUAL_SETUP_GUIDE.md.\x1b[0m\n`,
+      );
+    }
+  }
+
+  return {
+  plugins: [react(), tailwindcss()],
+  resolve: {
+    alias: {
+      '@': path.resolve(__dirname, './src'),
+    },
+  },
+  server: {
+    // Phase 10/14 (backend integration), domain by domain — see
+    // apps/api's CHANGELOG.md and this repo's INTEGRATION.md for the
+    // full story. Each domain proxied here is deliberately scoped to
+    // its own path prefix(es): MSW mocks every other /api/* path (see
+    // src/mocks/browser.ts's onUnhandledRequest: 'bypass'), and
+    // proxying all of /api/* would silently break every domain that
+    // hasn't been integrated yet. Real backend routes are versioned
+    // (/api/v1/...); the mock handlers and the rest of this frontend
+    // are not — each rewrite bridges that gap for exactly the prefixes
+    // being integrated, without changing anything else. Each block is
+    // OFF unless its own flag is set (see src/mocks/browser.ts).
+    proxy: {
+      // P0-D — unconditional, not gated behind a VITE_REAL_*_API flag
+      // like every other block here: file retrieval never had an MSW
+      // mock to bypass in the first place (nothing served these URLs
+      // at all before this phase — see apps/api's FilesController),
+      // so there's no mock behavior this could shadow.
+      '/api/uploads': {
+        target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+        changeOrigin: true,
+        rewrite: (requestPath: string) => requestPath.replace(/^\/api\/uploads/, '/api/v1/uploads'),
+      },
+      ...(env.VITE_REAL_AUTH_API === 'true'
+        ? {
+            '/api/auth': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/auth/, '/api/v1/auth'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_CATALOG_API === 'true'
+        ? {
+            '/api/products': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/products/, '/api/v1/products'),
+            },
+            '/api/categories': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/categories/, '/api/v1/categories'),
+            },
+            '/api/collections': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/collections/, '/api/v1/collections'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_REVIEWS_API === 'true'
+        ? {
+            '/api/reviews': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/reviews/, '/api/v1/reviews'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_CART_API === 'true'
+        ? {
+            '/api/cart': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/cart/, '/api/v1/cart'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_WISHLIST_API === 'true'
+        ? {
+            '/api/wishlist': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/wishlist/, '/api/v1/wishlist'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_ADDRESSES_API === 'true'
+        ? {
+            '/api/addresses': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/addresses/, '/api/v1/addresses'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_SEARCH_API === 'true'
+        ? {
+            '/api/search': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/search/, '/api/v1/search'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_RECOMMENDATIONS_API === 'true'
+        ? {
+            '/api/recommendations': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/recommendations/, '/api/v1/recommendations'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_NOTIFICATIONS_API === 'true'
+        ? {
+            '/api/notifications': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/notifications/, '/api/v1/notifications'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_COUPONS_API === 'true'
+        ? {
+            '/api/coupons': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/coupons/, '/api/v1/coupons'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_SHIPPING_API === 'true'
+        ? {
+            '/api/shipping': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/shipping/, '/api/v1/shipping'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_ORDERS_API === 'true'
+        ? {
+            '/api/checkout': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/checkout/, '/api/v1/checkout'),
+            },
+            '/api/orders': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/orders/, '/api/v1/orders'),
+            },
+            // Phase 1 (payments) — no separate VITE_REAL_PAYMENTS_API flag:
+            // payments only ever happen as part of a real checkout, so
+            // this rides on the same flag as /api/checkout and /api/orders
+            // above rather than adding a flag that could never
+            // meaningfully be toggled independently of them.
+            '/api/payments': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/payments/, '/api/v1/payments'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_SELLERS_API === 'true'
+        ? {
+            // Marketplace Phase 4 — the first real frontend surface for
+            // any of the seller domain built across Phases 1-3. Its own
+            // flag, not folded onto VITE_REAL_ADMIN_API/VITE_REAL_ORDERS_API:
+            // seller-facing and public-storefront pages are a genuinely
+            // separate feature a deployment could reasonably enable
+            // independently of the admin dashboard or checkout.
+            '/api/sellers': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/sellers/, '/api/v1/sellers'),
+            },
+          }
+        : {}),
+      ...(env.VITE_REAL_ADMIN_API === 'true'
+        ? {
+            '/api/admin': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/admin/, '/api/v1/admin'),
+            },
+            // Same flag as /api/admin above — the admin dashboards and
+            // the admin management endpoints are one real feature from
+            // the frontend's point of view, never toggled independently.
+            '/api/analytics': {
+              target: env.VITE_API_PROXY_TARGET || 'http://localhost:3000',
+              changeOrigin: true,
+              rewrite: (requestPath: string) => requestPath.replace(/^\/api\/analytics/, '/api/v1/analytics'),
+            },
+          }
+        : {}),
+    },
+  },
+  build: {
+    rollupOptions: {
+      output: {
+        // These libraries are pulled in eagerly (Navbar/Layout aren't
+        // lazy-loaded), so route-level code splitting alone can't keep them
+        // out of the main bundle. Splitting them into their own chunks means
+        // they're fetched in parallel rather than blocking on one monolithic
+        // bundle, and they're cacheable independently of app code that
+        // changes far more often.
+        manualChunks(id) {
+          if (id.includes('node_modules/framer-motion')) return 'vendor-motion';
+          if (id.includes('node_modules/axios')) return 'vendor-http';
+          if (id.includes('node_modules/zustand')) return 'vendor-state';
+        },
+      },
+    },
+  },
+  };
+})

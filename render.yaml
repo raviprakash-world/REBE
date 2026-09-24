@@ -1,0 +1,69 @@
+services:
+  - type: keyvalue
+    name: tane-redis
+    plan: free
+    ipAllowList: [] # only reachable over Render's private network
+    maxmemoryPolicy: noeviction # don't drop BullMQ job data under memory pressure
+
+  - type: web
+    name: tane-api
+    runtime: docker
+    dockerfilePath: apps/api/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /api/health/ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      # Neon Postgres (migrated off Render's free Postgres before its
+      # 2026-10-03 expiry). Set manually in the Render Dashboard; sync: false
+      # keeps a blueprint sync from ever overwriting it or trying to
+      # recreate a fromDatabase binding.
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          name: tane-redis
+          type: keyvalue
+          property: connectionString
+      - key: JWT_ACCESS_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: CORS_ORIGINS
+        value: https://web-drab-mu-24.vercel.app
+      # sync: false — prompted for in the Render Dashboard on creation
+      # rather than committed here, same treatment as any other real
+      # secret. The app boots fine with these unset (see
+      # env.validation.ts); real card/UPI/net-banking/wallet payments
+      # just fail loudly until they're set to real Razorpay values (see
+      # docs/API_INTEGRATION_STATUS.md).
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+      - key: RAZORPAY_WEBHOOK_SECRET
+        sync: false
+      # Same sync: false / boots-without-it treatment as Razorpay above —
+      # real password-reset/verification/order emails just fail to send
+      # (logged, non-fatal) until this is a real Resend key.
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        value: 'Folia <onboarding@resend.dev>'
+      - key: FRONTEND_URL
+        value: https://web-drab-mu-24.vercel.app
+      # Same sync: false / boots-without-it treatment as Razorpay/Resend
+      # above — the cart-page shipping estimate falls back to a flat-rate
+      # heuristic, and the admin "ship this order" action fails loudly,
+      # until these are real Shiprocket values.
+      - key: SHIPROCKET_EMAIL
+        sync: false
+      - key: SHIPROCKET_PASSWORD
+        sync: false
+      - key: SHIPROCKET_PICKUP_LOCATION
+        sync: false
+      - key: SHIPROCKET_PICKUP_PINCODE
+        sync: false

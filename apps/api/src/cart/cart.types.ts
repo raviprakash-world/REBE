@@ -1,0 +1,61 @@
+// See users/user.types.ts's top-of-file comment for why these are hand-written.
+import type { ProductApprovalStatus } from '@prisma/client';
+
+export interface PrismaDecimal {
+  toNumber(): number;
+}
+
+export interface CartItemRecord {
+  id: string;
+  cartId: string;
+  productId: string;
+  variantId: string | null;
+  quantity: number;
+  unitPrice: PrismaDecimal;
+  product: {
+    slug: string;
+    name: string;
+    categoryId: string;
+    category: { slug: string };
+    /** Marketplace Phase 5 — which seller owns this product (null =
+     * Tane-owned) and its current moderation status, both needed at
+     * checkout time to re-validate a cart line is still purchasable and
+     * to group order items by seller. */
+    sellerId: string | null;
+    approvalStatus: ProductApprovalStatus;
+    /** Marketplace Phase 16 — null for a Tane-owned line, matching sellerId's own nullability. */
+    seller: { displayName: string } | null;
+    /** Primary photo only (the cart include takes 1, ordered by position). */
+    images?: { url: string }[];
+  };
+  variant: { label: string } | null;
+}
+
+export interface CartRecord {
+  id: string;
+  userId: string | null;
+  guestToken: string | null;
+  items: CartItemRecord[];
+}
+
+/** Matches apps/web/src/types/cart.ts's CartItem exactly, including buildLineId's composite-key format. */
+export function toPublicCartItem(item: CartItemRecord) {
+  return {
+    lineId: `${item.productId}::${item.variantId ?? 'none'}`,
+    productId: item.productId,
+    slug: item.product.slug,
+    name: item.product.name,
+    categorySlug: item.product.category.slug,
+    price: item.unitPrice.toNumber(),
+    variantId: item.variantId,
+    variantLabel: item.variant?.label ?? null,
+    quantity: item.quantity,
+    sellerName: item.product.seller?.displayName ?? null,
+    imageUrl: item.product.images?.[0]?.url ?? null,
+  };
+}
+
+/** { items: [...] } — the natural analog to apps/web's cartStore's own `items: CartItem[]` state, since there's no existing GET /cart response shape to match (the frontend cart is currently pure client state). */
+export function toPublicCart(cart: CartRecord) {
+  return { items: cart.items.map(toPublicCartItem) };
+}

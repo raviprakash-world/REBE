@@ -1,0 +1,1877 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+// Same reasoning as auth.service.spec.ts's top-of-file comment.
+import {
+  BadRequestException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
+import { PaymentsService, PAYMENT_EXPIRY_MINUTES } from './payments.service';
+import type { CheckoutSnapshot } from '../orders/order.types';
+import type { LogAuditInput } from '../audit/audit.types';
+
+function decimal(value: number) {
+  return value; // Prisma Decimal in these mocks is just a plain number — Number(payment.amount) works either way, matching this codebase's existing decimal() test-helper convention elsewhere.
+}
+
+function makeSnapshot(
+  overrides: Partial<CheckoutSnapshot> = {},
+): CheckoutSnapshot {
+  return {
+    orderId: 'FOL-1',
+    subtotal: 65,
+    discount: 0,
+    couponCode: null,
+    shippingCost: 6.5,
+    tax: 5.2,
+    total: 71.3,
+    estimatedDelivery: '3–5 business days',
+    deliveryMethod: 'STANDARD',
+    customerNotes: null,
+    shippingAddressSnapshot: { id: 'addr-1' } as never,
+    billingAddressSnapshot: { id: 'addr-1' } as never,
+    items: [
+      {
+        productId: 'prod-1',
+        slug: 'monstera',
+        name: 'Monstera',
+        categorySlug: 'plants',
+        variantId: null,
+        variantLabel: null,
+        price: 65,
+        quantity: 1,
+        inventoryItemId: 'inv-1',
+        reservationId: 'res-1',
+        sellerId: null,
+      },
+    ],
+    ...overrides,
+  };
+}
+
+function makePayment(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'pay-1',
+    orderId: null, // Phase 2: no order until confirmAndCreateOrder runs
+    userId: 'user-1',
+    provider: 'RAZORPAY',
+    method: 'CREDIT_CARD',
+    status: 'CREATED',
+    amount: decimal(71.3),
+    currency: 'INR',
+    providerOrderId: 'order_razorpay_1',
+    providerPaymentId: null,
+    displayLabel: 'Visa •••• 4242',
+    checkoutSnapshot: makeSnapshot(),
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
+/** Shape `tx.order.create`/`prisma.order.findUniqueOrThrow` return — Prisma Decimal fields need `.toNumber()`, matching order.types.ts's OrderRecord. */
+function makeOrderRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: 'FOL-1',
+    createdAt: new Date(),
+    status: 'PROCESSING',
+    items: [],
+    subtotal: { toNumber: () => 65 },
+    discount: { toNumber: () => 0 },
+    couponCode: null,
+    shippingCost: { toNumber: () => 6.5 },
+    tax: { toNumber: () => 5.2 },
+    total: { toNumber: () => 71.3 },
+    shippingAddressSnapshot: { id: 'addr-1' },
+    billingAddressSnapshot: { id: 'addr-1' },
+    deliveryMethod: 'STANDARD',
+    estimatedDelivery: '3–5 business days',
+    paymentMethod: 'CREDIT_CARD',
+    paymentDisplayLabel: 'Visa •••• 4242',
+    paymentTransactionId: 'pay_abc',
+    courierId: 'SWIFTPOST',
+    trackingNumber: 'SW123456789',
+    customerNotes: null,
+    ...overrides,
+  };
+}
+
+function createDeps() {
+  const orderTx = {
+    order: {
+      create: jest.fn().mockResolvedValue(makeOrderRow()),
+      // Marketplace Phase 5 — confirmAndCreateOrder now re-fetches the
+      // order (with items) after creating its OrderSellerGroup(s)/
+      // OrderItems separately, rather than one nested create returning
+      // everything at once.
+      findUniqueOrThrow: jest.fn().mockResolvedValue(makeOrderRow()),
+    },
+    orderSellerGroup: {
+      create: jest.fn().mockResolvedValue({ id: 'group-1' }),
+    },
+    orderItem: { createMany: jest.fn().mockResolvedValue({ count: 1 }) },
+    payment: { update: jest.fn(), findUnique: jest.fn() },
+    refund: {
+      aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
+    $queryRaw: jest.fn(),
+  };
+  const prisma = {
+    payment: {
+      create: jest.fn(),
+      findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+      update: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    paymentAttempt: { create: jest.fn() },
+    refund: {
+      create: jest.fn(),
+      update: jest.fn(),
+      findFirst: jest.fn(),
+      findMany: jest.fn(),
+    },
+    paymentWebhookEvent: { create: jest.fn(), update: jest.fn() },
+    order: { findUniqueOrThrow: jest.fn() },
+    $transaction: jest.fn((cb: (tx: typeof orderTx) => unknown) => cb(orderTx)),
+  };
+  const cartService = {
+    resolveCart: jest
+      .fn()
+      .mockResolvedValue({ cart: { id: 'cart-1', items: [] } }),
+    clearCart: jest.fn(),
+  };
+  const config = {
+    razorpayKeyId: 'rzp_test_key',
+    razorpayKeySecret: 'test_secret',
+    razorpayWebhookSecret: 'webhook_secret',
+  };
+  const razorpay = {
+    createOrder: jest.fn(),
+    verifyPaymentSignature: jest.fn(),
+    verifyWebhookSignature: jest.fn(),
+    fetchPayment: jest.fn(),
+    refund: jest.fn(),
+  };
+  const inventoryService = {
+    commitReservation: jest.fn(),
+    releaseReservation: jest.fn(),
+  };
+  const eventEmitter = { emit: jest.fn() };
+  const auditService = {
+    log: jest.fn<Promise<void>, [LogAuditInput]>().mockResolvedValue(undefined),
+  };
+  // Marketplace Phase 8 — defaults to 0% so pre-existing tests that don't
+  // care about commission (most of them) see commissionAmount/Total: 0,
+  // exactly as they would have before this field existed. Tests that DO
+  // care override this mock's return value directly.
+  const commissionService = {
+    resolveEffectiveRate: jest.fn().mockImplementation((sellerId: string) =>
+      Promise.resolve({
+        sellerId,
+        ratePercent: 0,
+        isMarketplaceDefault: true,
+      }),
+    ),
+  };
+  // Marketplace Phase 9 — a no-op by default; tests that care about the
+  // ledger assert on this mock's calls directly.
+  const ledgerService = {
+    recordOrderProceeds: jest.fn().mockResolvedValue(undefined),
+  };
+
+  const service = new PaymentsService(
+    prisma as never,
+    cartService as never,
+    config as never,
+    razorpay as never,
+    inventoryService as never,
+    eventEmitter,
+    auditService as never,
+    commissionService as never,
+    ledgerService as never,
+  );
+
+  return {
+    prisma,
+    orderTx,
+    cartService,
+    config,
+    razorpay,
+    ledgerService,
+    inventoryService,
+    eventEmitter,
+    auditService,
+    commissionService,
+    service,
+  };
+}
+
+const ADMIN_ACTOR = { actorId: 'admin-1', actorType: 'admin' as const };
+
+describe('PaymentsService.createForOrder — COD', () => {
+  it('creates a COD_PENDING payment with no gateway round-trip and no requiresGatewayCheckout', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    prisma.payment.create.mockResolvedValue(
+      makePayment({ provider: 'COD', status: 'COD_PENDING', method: 'COD' }),
+    );
+
+    const result = await service.createForOrder({
+      paymentId: 'pay-1',
+      userId: 'user-1',
+      method: 'COD',
+      amount: 71.3,
+      displayLabel: 'Pay on delivery',
+      checkoutSnapshot: makeSnapshot(),
+    });
+
+    expect(result.requiresGatewayCheckout).toBe(false);
+    expect(razorpay.createOrder).not.toHaveBeenCalled();
+  });
+
+  it('resolves synchronously into a real order — COD has nothing async to wait for, so confirmAndCreateOrder runs immediately', async () => {
+    const { prisma, orderTx, inventoryService, service } = createDeps();
+    const snapshot = makeSnapshot();
+    prisma.payment.create.mockResolvedValue(
+      makePayment({
+        id: 'pay-cod-1',
+        provider: 'COD',
+        method: 'COD',
+        status: 'COD_PENDING',
+        checkoutSnapshot: snapshot,
+      }),
+    );
+    orderTx.order.create.mockResolvedValue(
+      makeOrderRow({ id: snapshot.orderId }),
+    );
+
+    const result = await service.createForOrder({
+      paymentId: 'pay-cod-1',
+      userId: 'user-1',
+      method: 'COD',
+      amount: 71.3,
+      displayLabel: 'Pay on delivery',
+      checkoutSnapshot: snapshot,
+    });
+
+    expect(inventoryService.commitReservation).toHaveBeenCalledWith(
+      'res-1',
+      orderTx,
+    );
+    expect(orderTx.payment.update).toHaveBeenCalledWith({
+      where: { id: 'pay-cod-1' },
+      data: { orderId: snapshot.orderId },
+    });
+    expect(result.order?.id).toBe(snapshot.orderId);
+  });
+
+  describe('Marketplace Phase 5 — multi-seller order splitting', () => {
+    it('a cart of Tane + two sellers produces exactly three OrderSellerGroup rows, one per distinct seller', async () => {
+      const { prisma, orderTx, service } = createDeps();
+      const snapshot = makeSnapshot({
+        items: [
+          {
+            productId: 'prod-folia',
+            slug: 'folia-pot',
+            name: 'Tane Pot',
+            categorySlug: 'vessels',
+            variantId: null,
+            variantLabel: null,
+            price: 20,
+            quantity: 1,
+            inventoryItemId: 'inv-folia',
+            reservationId: 'res-folia',
+            sellerId: null,
+          },
+          {
+            productId: 'prod-a1',
+            slug: 'seller-a-plant',
+            name: 'Seller A Plant',
+            categorySlug: 'plants',
+            variantId: null,
+            variantLabel: null,
+            price: 30,
+            quantity: 1,
+            inventoryItemId: 'inv-a1',
+            reservationId: 'res-a1',
+            sellerId: 'seller-a',
+          },
+          {
+            productId: 'prod-a2',
+            slug: 'seller-a-vase',
+            name: 'Seller A Vase',
+            categorySlug: 'vessels',
+            variantId: null,
+            variantLabel: null,
+            price: 15,
+            quantity: 1,
+            inventoryItemId: 'inv-a2',
+            reservationId: 'res-a2',
+            sellerId: 'seller-a',
+          },
+          {
+            productId: 'prod-b1',
+            slug: 'seller-b-tool',
+            name: 'Seller B Tool',
+            categorySlug: 'tools',
+            variantId: null,
+            variantLabel: null,
+            price: 10,
+            quantity: 2,
+            inventoryItemId: 'inv-b1',
+            reservationId: 'res-b1',
+            sellerId: 'seller-b',
+          },
+        ],
+      });
+      prisma.payment.create.mockResolvedValue(
+        makePayment({
+          id: 'pay-multi',
+          provider: 'COD',
+          checkoutSnapshot: snapshot,
+        }),
+      );
+      let groupCounter = 0;
+      orderTx.orderSellerGroup.create.mockImplementation(() =>
+        Promise.resolve({ id: `group-${++groupCounter}` }),
+      );
+
+      await service.createForOrder({
+        paymentId: 'pay-multi',
+        userId: 'user-1',
+        method: 'COD',
+        amount: 75,
+        displayLabel: 'Pay on delivery',
+        checkoutSnapshot: snapshot,
+      });
+
+      expect(orderTx.orderSellerGroup.create).toHaveBeenCalledTimes(3);
+      const groupCalls = orderTx.orderSellerGroup.create.mock.calls.map(
+        (c: [{ data: Record<string, unknown> }]) => c[0].data,
+      );
+      expect(groupCalls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ sellerId: null, subtotal: 20 }),
+          expect.objectContaining({ sellerId: 'seller-a', subtotal: 45 }),
+          expect.objectContaining({ sellerId: 'seller-b', subtotal: 20 }),
+        ]),
+      );
+    });
+
+    it('every OrderItem is created pointing at its own seller group, via one createMany call — not a nested items.create', async () => {
+      const { prisma, orderTx, service } = createDeps();
+      const snapshot = makeSnapshot({
+        items: [
+          {
+            productId: 'prod-folia',
+            slug: 'folia-pot',
+            name: 'Tane Pot',
+            categorySlug: 'vessels',
+            variantId: null,
+            variantLabel: null,
+            price: 20,
+            quantity: 1,
+            inventoryItemId: 'inv-folia',
+            reservationId: 'res-folia',
+            sellerId: null,
+          },
+          {
+            productId: 'prod-a1',
+            slug: 'seller-a-plant',
+            name: 'Seller A Plant',
+            categorySlug: 'plants',
+            variantId: null,
+            variantLabel: null,
+            price: 30,
+            quantity: 1,
+            inventoryItemId: 'inv-a1',
+            reservationId: 'res-a1',
+            sellerId: 'seller-a',
+          },
+        ],
+      });
+      prisma.payment.create.mockResolvedValue(
+        makePayment({
+          id: 'pay-multi-2',
+          provider: 'COD',
+          checkoutSnapshot: snapshot,
+        }),
+      );
+      orderTx.orderSellerGroup.create.mockImplementation(
+        (args: { data: { sellerId: string | null } }) =>
+          Promise.resolve({
+            id: args.data.sellerId ? 'group-seller-a' : 'group-folia',
+          }),
+      );
+
+      await service.createForOrder({
+        paymentId: 'pay-multi-2',
+        userId: 'user-1',
+        method: 'COD',
+        amount: 50,
+        displayLabel: 'Pay on delivery',
+        checkoutSnapshot: snapshot,
+      });
+
+      expect(orderTx.orderItem.createMany).toHaveBeenCalledWith({
+        data: [
+          expect.objectContaining({
+            productId: 'prod-folia',
+            orderSellerGroupId: 'group-folia',
+          }),
+          expect.objectContaining({
+            productId: 'prod-a1',
+            orderSellerGroupId: 'group-seller-a',
+          }),
+        ],
+      });
+    });
+  });
+
+  describe('Marketplace Phase 8 — commission', () => {
+    it('resolves and freezes commission on each seller group, but always 0 for the Tane-owned group', async () => {
+      const { prisma, orderTx, commissionService, service } = createDeps();
+      commissionService.resolveEffectiveRate.mockImplementation(
+        (sellerId: string) =>
+          Promise.resolve({
+            sellerId,
+            ratePercent: sellerId === 'seller-a' ? 10 : 20,
+            isMarketplaceDefault: false,
+          }),
+      );
+      const snapshot = makeSnapshot({
+        items: [
+          {
+            productId: 'prod-folia',
+            slug: 'folia-pot',
+            name: 'Tane Pot',
+            categorySlug: 'vessels',
+            variantId: null,
+            variantLabel: null,
+            price: 20,
+            quantity: 1,
+            inventoryItemId: 'inv-folia',
+            reservationId: 'res-folia',
+            sellerId: null,
+          },
+          {
+            productId: 'prod-a1',
+            slug: 'seller-a-plant',
+            name: 'Seller A Plant',
+            categorySlug: 'plants',
+            variantId: null,
+            variantLabel: null,
+            price: 30,
+            quantity: 1,
+            inventoryItemId: 'inv-a1',
+            reservationId: 'res-a1',
+            sellerId: 'seller-a',
+          },
+          {
+            productId: 'prod-b1',
+            slug: 'seller-b-tool',
+            name: 'Seller B Tool',
+            categorySlug: 'tools',
+            variantId: null,
+            variantLabel: null,
+            price: 10,
+            quantity: 2,
+            inventoryItemId: 'inv-b1',
+            reservationId: 'res-b1',
+            sellerId: 'seller-b',
+          },
+        ],
+      });
+      prisma.payment.create.mockResolvedValue(
+        makePayment({
+          id: 'pay-comm',
+          provider: 'COD',
+          checkoutSnapshot: snapshot,
+        }),
+      );
+      orderTx.orderSellerGroup.create.mockImplementation(
+        (args: { data: { sellerId: string | null } }) =>
+          Promise.resolve({ id: `group-${args.data.sellerId ?? 'folia'}` }),
+      );
+
+      await service.createForOrder({
+        paymentId: 'pay-comm',
+        userId: 'user-1',
+        method: 'COD',
+        amount: 60,
+        displayLabel: 'Pay on delivery',
+        checkoutSnapshot: snapshot,
+      });
+
+      // Never asked to resolve a rate for the Tane-owned bucket — there
+      // is no commission to resolve for a sale Tane makes to itself.
+      expect(commissionService.resolveEffectiveRate).not.toHaveBeenCalledWith(
+        null,
+        expect.anything(),
+      );
+      expect(commissionService.resolveEffectiveRate).toHaveBeenCalledWith(
+        'seller-a',
+        orderTx,
+      );
+      expect(commissionService.resolveEffectiveRate).toHaveBeenCalledWith(
+        'seller-b',
+        orderTx,
+      );
+
+      const groupCalls = orderTx.orderSellerGroup.create.mock.calls.map(
+        (c: [{ data: Record<string, unknown> }]) => c[0].data,
+      );
+      expect(groupCalls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ sellerId: null, commissionTotal: 0 }),
+          expect.objectContaining({ sellerId: 'seller-a', commissionTotal: 3 }), // 30 * 10%
+          expect.objectContaining({ sellerId: 'seller-b', commissionTotal: 4 }), // 20 * 20%
+        ]),
+      );
+
+      const itemCalls = (
+        orderTx.orderItem.createMany.mock.calls[0][0] as {
+          data: Record<string, unknown>[];
+        }
+      ).data;
+      expect(itemCalls).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            productId: 'prod-folia',
+            commissionRatePercent: 0,
+            commissionAmount: 0,
+          }),
+          expect.objectContaining({
+            productId: 'prod-a1',
+            commissionRatePercent: 10,
+            commissionAmount: 3,
+          }),
+          expect.objectContaining({
+            productId: 'prod-b1',
+            commissionRatePercent: 20,
+            commissionAmount: 4,
+          }),
+        ]),
+      );
+    });
+
+    it('propagates the "no marketplace default configured" error rather than silently charging 0% commission', async () => {
+      const { prisma, commissionService, service } = createDeps();
+      commissionService.resolveEffectiveRate.mockRejectedValue(
+        new BadRequestException(
+          'No marketplace-default commission rate is configured.',
+        ),
+      );
+      const snapshot = makeSnapshot({
+        items: [
+          {
+            productId: 'prod-a1',
+            slug: 'seller-a-plant',
+            name: 'Seller A Plant',
+            categorySlug: 'plants',
+            variantId: null,
+            variantLabel: null,
+            price: 30,
+            quantity: 1,
+            inventoryItemId: 'inv-a1',
+            reservationId: 'res-a1',
+            sellerId: 'seller-a',
+          },
+        ],
+      });
+      prisma.payment.create.mockResolvedValue(
+        makePayment({
+          id: 'pay-no-default',
+          provider: 'COD',
+          checkoutSnapshot: snapshot,
+        }),
+      );
+
+      await expect(
+        service.createForOrder({
+          paymentId: 'pay-no-default',
+          userId: 'user-1',
+          method: 'COD',
+          amount: 30,
+          displayLabel: 'Pay on delivery',
+          checkoutSnapshot: snapshot,
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('Marketplace Phase 9 — seller ledger', () => {
+    it('records SALE + COMMISSION proceeds for each real seller group, but never for the Tane-owned group', async () => {
+      const { prisma, orderTx, commissionService, ledgerService, service } =
+        createDeps();
+      commissionService.resolveEffectiveRate.mockImplementation(
+        (sellerId: string) =>
+          Promise.resolve({
+            sellerId,
+            ratePercent: 10,
+            isMarketplaceDefault: true,
+          }),
+      );
+      const snapshot = makeSnapshot({
+        items: [
+          {
+            productId: 'prod-folia',
+            slug: 'folia-pot',
+            name: 'Tane Pot',
+            categorySlug: 'vessels',
+            variantId: null,
+            variantLabel: null,
+            price: 20,
+            quantity: 1,
+            inventoryItemId: 'inv-folia',
+            reservationId: 'res-folia',
+            sellerId: null,
+          },
+          {
+            productId: 'prod-a1',
+            slug: 'seller-a-plant',
+            name: 'Seller A Plant',
+            categorySlug: 'plants',
+            variantId: null,
+            variantLabel: null,
+            price: 50,
+            quantity: 1,
+            inventoryItemId: 'inv-a1',
+            reservationId: 'res-a1',
+            sellerId: 'seller-a',
+          },
+        ],
+      });
+      prisma.payment.create.mockResolvedValue(
+        makePayment({
+          id: 'pay-ledger',
+          provider: 'COD',
+          checkoutSnapshot: snapshot,
+        }),
+      );
+      orderTx.orderSellerGroup.create.mockImplementation(
+        (args: { data: { sellerId: string | null } }) =>
+          Promise.resolve({ id: `group-${args.data.sellerId ?? 'folia'}` }),
+      );
+
+      await service.createForOrder({
+        paymentId: 'pay-ledger',
+        userId: 'user-1',
+        method: 'COD',
+        amount: 70,
+        displayLabel: 'Pay on delivery',
+        checkoutSnapshot: snapshot,
+      });
+
+      expect(ledgerService.recordOrderProceeds).toHaveBeenCalledTimes(1);
+      expect(ledgerService.recordOrderProceeds).toHaveBeenCalledWith(
+        orderTx,
+        'seller-a',
+        'group-seller-a',
+        50,
+        5, // 50 * 10%
+      );
+    });
+  });
+
+  it('clears the cart once the order is created for COD, since there is nothing asynchronous to wait for', async () => {
+    const { prisma, cartService, service } = createDeps();
+    prisma.payment.create.mockResolvedValue(makePayment({ provider: 'COD' }));
+
+    await service.createForOrder({
+      paymentId: 'pay-1',
+      userId: 'user-1',
+      method: 'COD',
+      amount: 71.3,
+      displayLabel: 'Pay on delivery',
+      checkoutSnapshot: makeSnapshot(),
+    });
+
+    expect(cartService.clearCart).toHaveBeenCalledWith('cart-1');
+  });
+});
+
+describe('PaymentsService.createForOrder — Razorpay', () => {
+  it('creates a real gateway order and returns everything the frontend needs to open Checkout.js', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    razorpay.createOrder.mockResolvedValue({ providerOrderId: 'order_abc' });
+    prisma.payment.create.mockResolvedValue(
+      makePayment({ providerOrderId: 'order_abc' }),
+    );
+
+    const result = await service.createForOrder({
+      paymentId: 'pay-1',
+      userId: 'user-1',
+      method: 'CREDIT_CARD',
+      amount: 71.3,
+      displayLabel: 'Visa •••• 4242',
+      checkoutSnapshot: makeSnapshot(),
+    });
+
+    expect(razorpay.createOrder).toHaveBeenCalledWith({
+      amount: 71.3,
+      currency: 'INR',
+      receipt: 'pay-1',
+    });
+    expect(result.requiresGatewayCheckout).toBe(true);
+    expect(result.gateway).toEqual({
+      keyId: 'rzp_test_key',
+      providerOrderId: 'order_abc',
+      amount: 71.3,
+      currency: 'INR',
+    });
+  });
+
+  it('does NOT create an order, commit any reservation, or clear the cart yet — nothing is confirmed until verify()/the webhook resolves it', async () => {
+    const { prisma, cartService, razorpay, inventoryService, service } =
+      createDeps();
+    razorpay.createOrder.mockResolvedValue({ providerOrderId: 'order_abc' });
+    prisma.payment.create.mockResolvedValue(makePayment());
+
+    await service.createForOrder({
+      paymentId: 'pay-1',
+      userId: 'user-1',
+      method: 'UPI',
+      amount: 71.3,
+      displayLabel: 'you@bank',
+      checkoutSnapshot: makeSnapshot(),
+    });
+
+    expect(inventoryService.commitReservation).not.toHaveBeenCalled();
+    expect(cartService.clearCart).not.toHaveBeenCalled();
+  });
+
+  it('persists the checkout snapshot and idempotency key on the Payment row', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    razorpay.createOrder.mockResolvedValue({ providerOrderId: 'order_abc' });
+    prisma.payment.create.mockResolvedValue(makePayment());
+    const snapshot = makeSnapshot();
+
+    await service.createForOrder({
+      paymentId: 'pay-1',
+      userId: 'user-1',
+      method: 'CREDIT_CARD',
+      amount: 71.3,
+      displayLabel: 'Visa •••• 4242',
+      idempotencyKey: 'idem-key-1',
+      checkoutSnapshot: snapshot,
+    });
+
+    const createCall = prisma.payment.create.mock.calls[0][0] as {
+      data: { idempotencyKey: string; checkoutSnapshot: unknown };
+    };
+    expect(createCall.data.idempotencyKey).toBe('idem-key-1');
+    expect(createCall.data.checkoutSnapshot).toEqual(snapshot);
+  });
+
+  it('rejects up front, before ever creating a Payment row, when Razorpay is not configured at all', async () => {
+    const { config, prisma, razorpay, service } = createDeps();
+    config.razorpayKeyId = undefined as never;
+
+    await expect(
+      service.createForOrder({
+        paymentId: 'pay-1',
+        userId: 'user-1',
+        method: 'CREDIT_CARD',
+        amount: 71.3,
+        displayLabel: 'Visa •••• 4242',
+        checkoutSnapshot: makeSnapshot(),
+      }),
+    ).rejects.toThrow(BadRequestException);
+    expect(razorpay.createOrder).not.toHaveBeenCalled();
+    expect(prisma.payment.create).not.toHaveBeenCalled();
+  });
+
+  it('rejects an online payment under 100 paise before calling Razorpay or creating a Payment', async () => {
+    const { prisma, razorpay, service } = createDeps();
+
+    await expect(
+      service.createForOrder({
+        paymentId: 'pay-1',
+        userId: 'user-1',
+        method: 'CREDIT_CARD',
+        amount: 0.99,
+        displayLabel: 'Visa •••• 4242',
+        checkoutSnapshot: makeSnapshot(),
+      }),
+    ).rejects.toThrow(/at least ₹1\.00/);
+    expect(razorpay.createOrder).not.toHaveBeenCalled();
+    expect(prisma.payment.create).not.toHaveBeenCalled();
+  });
+
+  it('accepts exactly 100 paise (Rs 1.00)', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    razorpay.createOrder.mockResolvedValue({ providerOrderId: 'order_min' });
+    prisma.payment.create.mockResolvedValue(
+      makePayment({ providerOrderId: 'order_min' }),
+    );
+
+    const result = await service.createForOrder({
+      paymentId: 'pay-1',
+      userId: 'user-1',
+      method: 'CREDIT_CARD',
+      amount: 1,
+      displayLabel: 'Visa •••• 4242',
+      checkoutSnapshot: makeSnapshot(),
+    });
+
+    expect(result.requiresGatewayCheckout).toBe(true);
+  });
+
+  it('propagates a gateway failure (e.g. a timeout) rather than silently creating a Payment with no real gateway order behind it', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    razorpay.createOrder.mockRejectedValue(new Error('ETIMEDOUT'));
+
+    await expect(
+      service.createForOrder({
+        paymentId: 'pay-1',
+        userId: 'user-1',
+        method: 'CREDIT_CARD',
+        amount: 71.3,
+        displayLabel: 'Visa •••• 4242',
+        checkoutSnapshot: makeSnapshot(),
+      }),
+    ).rejects.toThrow('ETIMEDOUT');
+    expect(prisma.payment.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('PaymentsService.verify', () => {
+  it('rejects when the payment does not belong to the caller', async () => {
+    const { prisma, service } = createDeps();
+    prisma.payment.findUnique.mockResolvedValue(
+      makePayment({ userId: 'someone-else' }),
+    );
+
+    await expect(
+      service.verify('pay-1', 'user-1', {
+        providerOrderId: 'order_abc',
+        providerPaymentId: 'pay_abc',
+        signature: 'sig',
+      }),
+    ).rejects.toThrow(ForbiddenException);
+  });
+
+  it('rejects a provider order id that does not match this payment — a real order/payment mismatch, not just a bad signature', async () => {
+    const { prisma, service } = createDeps();
+    prisma.payment.findUnique.mockResolvedValue(
+      makePayment({ providerOrderId: 'order_real' }),
+    );
+
+    await expect(
+      service.verify('pay-1', 'user-1', {
+        providerOrderId: 'order_wrong',
+        providerPaymentId: 'pay_abc',
+        signature: 'sig',
+      }),
+    ).rejects.toThrow('Payment/order mismatch.');
+  });
+
+  it('rejects an invalid signature without ever calling fetchPayment (no reason to trust Razorpay for details on an unverified claim)', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    prisma.payment.findUnique.mockResolvedValue(makePayment());
+    razorpay.verifyPaymentSignature.mockReturnValue(false);
+
+    await expect(
+      service.verify('pay-1', 'user-1', {
+        providerOrderId: 'order_razorpay_1',
+        providerPaymentId: 'pay_abc',
+        signature: 'bad-sig',
+      }),
+    ).rejects.toThrow('Payment verification failed.');
+    expect(razorpay.fetchPayment).not.toHaveBeenCalled();
+  });
+
+  it("never trusts the callback's own claim — independently re-fetches the payment from Razorpay and rejects if the gateway itself does not report it captured", async () => {
+    const { prisma, razorpay, service } = createDeps();
+    prisma.payment.findUnique.mockResolvedValue(makePayment());
+    razorpay.verifyPaymentSignature.mockReturnValue(true);
+    razorpay.fetchPayment.mockResolvedValue({
+      providerPaymentId: 'pay_abc',
+      status: 'failed',
+      amount: 71.3,
+      errorDescription: 'Card declined',
+    });
+
+    await expect(
+      service.verify('pay-1', 'user-1', {
+        providerOrderId: 'order_razorpay_1',
+        providerPaymentId: 'pay_abc',
+        signature: 'sig',
+      }),
+    ).rejects.toThrow('Card declined');
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'FAILED' } }),
+    );
+  });
+
+  it('rejects on an amount mismatch between what we expected and what the gateway actually reports — a real tamper/bug signal', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    prisma.payment.findUnique.mockResolvedValue(
+      makePayment({ amount: decimal(71.3) }),
+    );
+    razorpay.verifyPaymentSignature.mockReturnValue(true);
+    razorpay.fetchPayment.mockResolvedValue({
+      providerPaymentId: 'pay_abc',
+      status: 'captured',
+      amount: 1.0, // wildly different from the 71.3 this payment was created for
+    });
+
+    await expect(
+      service.verify('pay-1', 'user-1', {
+        providerOrderId: 'order_razorpay_1',
+        providerPaymentId: 'pay_abc',
+        signature: 'sig',
+      }),
+    ).rejects.toThrow('Payment verification failed.');
+  });
+
+  it('captures, commits the reservation, creates the order, and clears the cart on a genuinely valid, gateway-confirmed payment', async () => {
+    const {
+      prisma,
+      orderTx,
+      cartService,
+      razorpay,
+      inventoryService,
+      eventEmitter,
+      service,
+    } = createDeps();
+    const snapshot = makeSnapshot();
+    const pending = makePayment({ checkoutSnapshot: snapshot });
+    prisma.payment.findUnique.mockResolvedValue(pending);
+    prisma.payment.updateMany.mockResolvedValue({ count: 1 });
+    prisma.payment.findUniqueOrThrow.mockResolvedValue(
+      makePayment({
+        status: 'CAPTURED',
+        providerPaymentId: 'pay_abc',
+        checkoutSnapshot: snapshot,
+      }),
+    );
+    orderTx.order.create.mockResolvedValue(
+      makeOrderRow({ id: snapshot.orderId }),
+    );
+    razorpay.verifyPaymentSignature.mockReturnValue(true);
+    razorpay.fetchPayment.mockResolvedValue({
+      providerPaymentId: 'pay_abc',
+      status: 'captured',
+      amount: 71.3,
+    });
+
+    const result = await service.verify('pay-1', 'user-1', {
+      providerOrderId: 'order_razorpay_1',
+      providerPaymentId: 'pay_abc',
+      signature: 'sig',
+    });
+
+    expect(result.payment.status).toBe('CAPTURED');
+    expect(result.order.id).toBe(snapshot.orderId);
+    expect(inventoryService.commitReservation).toHaveBeenCalledWith(
+      'res-1',
+      orderTx,
+    );
+    expect(cartService.clearCart).toHaveBeenCalledWith('cart-1');
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'payment.captured',
+      expect.objectContaining({
+        orderId: snapshot.orderId,
+        paymentId: 'pay-1',
+      }),
+    );
+  });
+
+  it('Marketplace Phase 7 — a gateway-confirmed capture splits a multi-seller cart into OrderSellerGroups exactly like the COD path, since both share the same confirmAndCreateOrder', async () => {
+    const { prisma, orderTx, razorpay, service } = createDeps();
+    const snapshot = makeSnapshot({
+      items: [
+        {
+          productId: 'prod-folia',
+          slug: 'folia-pot',
+          name: 'Tane Pot',
+          categorySlug: 'vessels',
+          variantId: null,
+          variantLabel: null,
+          price: 20,
+          quantity: 1,
+          inventoryItemId: 'inv-folia',
+          reservationId: 'res-folia',
+          sellerId: null,
+        },
+        {
+          productId: 'prod-a1',
+          slug: 'seller-a-plant',
+          name: 'Seller A Plant',
+          categorySlug: 'plants',
+          variantId: null,
+          variantLabel: null,
+          price: 51.3,
+          quantity: 1,
+          inventoryItemId: 'inv-a1',
+          reservationId: 'res-a1',
+          sellerId: 'seller-a',
+        },
+      ],
+    });
+    const pending = makePayment({ checkoutSnapshot: snapshot });
+    prisma.payment.findUnique.mockResolvedValue(pending);
+    prisma.payment.updateMany.mockResolvedValue({ count: 1 });
+    prisma.payment.findUniqueOrThrow.mockResolvedValue(
+      makePayment({
+        status: 'CAPTURED',
+        providerPaymentId: 'pay_abc',
+        checkoutSnapshot: snapshot,
+      }),
+    );
+    orderTx.order.create.mockResolvedValue(
+      makeOrderRow({ id: snapshot.orderId }),
+    );
+    orderTx.orderSellerGroup.create.mockImplementation(
+      (args: { data: { sellerId: string | null } }) =>
+        Promise.resolve({
+          id: args.data.sellerId ? 'group-seller-a' : 'group-folia',
+        }),
+    );
+    razorpay.verifyPaymentSignature.mockReturnValue(true);
+    razorpay.fetchPayment.mockResolvedValue({
+      providerPaymentId: 'pay_abc',
+      status: 'captured',
+      amount: 71.3,
+    });
+
+    await service.verify('pay-1', 'user-1', {
+      providerOrderId: 'order_razorpay_1',
+      providerPaymentId: 'pay_abc',
+      signature: 'sig',
+    });
+
+    expect(orderTx.orderSellerGroup.create).toHaveBeenCalledTimes(2);
+    const groupCalls = orderTx.orderSellerGroup.create.mock.calls.map(
+      (c: [{ data: Record<string, unknown> }]) => c[0].data,
+    );
+    expect(groupCalls).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sellerId: null, subtotal: 20 }),
+        expect.objectContaining({ sellerId: 'seller-a', subtotal: 51.3 }),
+      ]),
+    );
+    expect(orderTx.orderItem.createMany).toHaveBeenCalledWith({
+      data: [
+        expect.objectContaining({
+          productId: 'prod-folia',
+          orderSellerGroupId: 'group-folia',
+        }),
+        expect.objectContaining({
+          productId: 'prod-a1',
+          orderSellerGroupId: 'group-seller-a',
+        }),
+      ],
+    });
+  });
+
+  it('is idempotent — verifying an already-CAPTURED payment again is a safe no-op that returns the existing order, not a second one', async () => {
+    const { prisma, cartService, razorpay, service } = createDeps();
+    const alreadyOrdered = makePayment({
+      status: 'CAPTURED',
+      providerPaymentId: 'pay_abc',
+      orderId: 'FOL-1',
+    });
+    prisma.payment.findUnique.mockResolvedValue(alreadyOrdered);
+    prisma.order.findUniqueOrThrow.mockResolvedValue(makeOrderRow());
+    razorpay.verifyPaymentSignature.mockReturnValue(true);
+    razorpay.fetchPayment.mockResolvedValue({
+      providerPaymentId: 'pay_abc',
+      status: 'captured',
+      amount: 71.3,
+    });
+
+    const result = await service.verify('pay-1', 'user-1', {
+      providerOrderId: 'order_razorpay_1',
+      providerPaymentId: 'pay_abc',
+      signature: 'sig',
+    });
+
+    expect(result.order.id).toBe('FOL-1');
+    expect(prisma.payment.updateMany).not.toHaveBeenCalled();
+    expect(cartService.clearCart).not.toHaveBeenCalled();
+  });
+
+  it('loses the race to expireStalePayments loudly — refuses to create an order when the capture arrives after this payment was already expired', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    prisma.payment.findUnique.mockResolvedValue(makePayment());
+    prisma.payment.updateMany.mockResolvedValue({ count: 0 });
+    prisma.payment.findUniqueOrThrow.mockResolvedValue(
+      makePayment({ status: 'EXPIRED' }),
+    );
+    razorpay.verifyPaymentSignature.mockReturnValue(true);
+    razorpay.fetchPayment.mockResolvedValue({
+      providerPaymentId: 'pay_abc',
+      status: 'captured',
+      amount: 71.3,
+    });
+
+    await expect(
+      service.verify('pay-1', 'user-1', {
+        providerOrderId: 'order_razorpay_1',
+        providerPaymentId: 'pay_abc',
+        signature: 'sig',
+      }),
+    ).rejects.toThrow(/expired/i);
+  });
+});
+
+describe('PaymentsService.handleWebhookEvent', () => {
+  const rawBody = JSON.stringify({
+    event: 'payment.captured',
+    payload: {
+      payment: {
+        entity: { id: 'pay_webhook_1', order_id: 'order_razorpay_1' },
+      },
+    },
+  });
+
+  it('rejects an invalid webhook signature before ever touching the database', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    razorpay.verifyWebhookSignature.mockReturnValue(false);
+
+    await expect(
+      service.handleWebhookEvent(rawBody, 'bad-sig', 'evt_1'),
+    ).rejects.toThrow('Invalid webhook signature.');
+    expect(prisma.paymentWebhookEvent.create).not.toHaveBeenCalled();
+  });
+
+  it('captures the payment and creates the order on a valid payment.captured event — the authoritative path, independent of whether the client ever called verify()', async () => {
+    const { prisma, orderTx, razorpay, service } = createDeps();
+    razorpay.verifyWebhookSignature.mockReturnValue(true);
+    prisma.paymentWebhookEvent.create.mockResolvedValue({});
+    prisma.payment.findFirst.mockResolvedValue(makePayment());
+    prisma.payment.updateMany.mockResolvedValue({ count: 1 });
+    prisma.payment.findUniqueOrThrow.mockResolvedValue(
+      makePayment({ status: 'CAPTURED', providerPaymentId: 'pay_webhook_1' }),
+    );
+
+    const result = await service.handleWebhookEvent(rawBody, 'sig', 'evt_1');
+
+    expect(result.status).toBe('processed');
+    expect(orderTx.order.create).toHaveBeenCalled();
+  });
+
+  it('is idempotent — a redelivered event (same providerEventId) is rejected by the DB unique constraint and treated as a safe duplicate, never reprocessed', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    razorpay.verifyWebhookSignature.mockReturnValue(true);
+    prisma.paymentWebhookEvent.create.mockRejectedValue(
+      Object.assign(new Error('Unique constraint failed'), { code: 'P2002' }),
+    );
+
+    const result = await service.handleWebhookEvent(rawBody, 'sig', 'evt_1');
+
+    expect(result.status).toBe('duplicate');
+    expect(prisma.payment.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('rejects a malformed payload after signature verification but before recording it', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    razorpay.verifyWebhookSignature.mockReturnValue(true);
+
+    await expect(
+      service.handleWebhookEvent('{not json', 'sig', 'evt_1'),
+    ).rejects.toThrow('Malformed webhook payload.');
+    expect(prisma.paymentWebhookEvent.create).not.toHaveBeenCalled();
+  });
+});
+
+describe('PaymentsService.handleWebhookEvent — refund reconciliation (Phase 6D-4F)', () => {
+  function refundWebhookBody(
+    event: 'refund.processed' | 'refund.failed',
+    overrides: Record<string, unknown> = {},
+  ): string {
+    return JSON.stringify({
+      event,
+      payload: {
+        refund: {
+          entity: {
+            id: 'rfnd_test1',
+            payment_id: 'pay_webhook_1',
+            amount: 50000, // paise -> ₹500.00
+            status: event === 'refund.processed' ? 'processed' : 'failed',
+            ...overrides,
+          },
+        },
+      },
+    });
+  }
+
+  it('reconciles a stuck PENDING refund on refund.processed: finalizes success, emits PAYMENT_EVENTS.REFUNDED, audits PAYMENT_REFUND with actorType system', async () => {
+    const { prisma, orderTx, razorpay, eventEmitter, auditService, service } =
+      createDeps();
+    razorpay.verifyWebhookSignature.mockReturnValue(true);
+    prisma.paymentWebhookEvent.create.mockResolvedValue({});
+    prisma.payment.findFirst.mockResolvedValue(
+      makePayment({ providerPaymentId: 'pay_webhook_1', status: 'CAPTURED' }),
+    );
+    prisma.refund.findFirst.mockResolvedValue(null);
+    prisma.refund.findMany.mockResolvedValue([
+      {
+        id: 'refund-1',
+        status: 'PENDING',
+        amount: decimal(500),
+        reason: 'Return resolution',
+      },
+    ]);
+    orderTx.refund.update.mockResolvedValue({
+      id: 'refund-1',
+      status: 'PROCESSED',
+    });
+    orderTx.refund.aggregate.mockResolvedValue({ _sum: { amount: 500 } });
+
+    const result = await service.handleWebhookEvent(
+      refundWebhookBody('refund.processed'),
+      'sig',
+      'evt_refund_1',
+    );
+
+    expect(result.status).toBe('processed');
+    expect(eventEmitter.emit).toHaveBeenCalledWith(
+      'payment.refunded',
+      expect.objectContaining({ paymentId: 'pay-1', amount: 500 }),
+    );
+    const [[loggedInput]] = auditService.log.mock.calls;
+    expect(loggedInput.action).toBe('PAYMENT_REFUND');
+    expect(loggedInput.actorId).toBe('user-1');
+    expect(loggedInput.metadata?.actorType).toBe('system');
+    expect(orderTx.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'REFUNDED' } }),
+    );
+  });
+
+  it('reconciles a stuck PENDING refund on refund.failed: marks it FAILED, audits PAYMENT_REFUND_FAILED, never emits REFUNDED', async () => {
+    const { prisma, razorpay, eventEmitter, auditService, service } =
+      createDeps();
+    razorpay.verifyWebhookSignature.mockReturnValue(true);
+    prisma.paymentWebhookEvent.create.mockResolvedValue({});
+    prisma.payment.findFirst.mockResolvedValue(
+      makePayment({ providerPaymentId: 'pay_webhook_1', status: 'CAPTURED' }),
+    );
+    prisma.refund.findFirst.mockResolvedValue(null);
+    prisma.refund.findMany.mockResolvedValue([
+      { id: 'refund-1', status: 'PENDING', amount: decimal(500), reason: null },
+    ]);
+
+    await service.handleWebhookEvent(
+      refundWebhookBody('refund.failed'),
+      'sig',
+      'evt_refund_2',
+    );
+
+    expect(prisma.refund.update).toHaveBeenCalledWith({
+      where: { id: 'refund-1' },
+      data: { status: 'FAILED' },
+    });
+    expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+      'payment.refunded',
+      expect.anything(),
+    );
+    expect(auditService.log).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'PAYMENT_REFUND_FAILED' }),
+    );
+  });
+
+  it('is idempotent — a refund already recorded under this providerRefundId is left untouched (redelivered webhook, or the synchronous path actually succeeded)', async () => {
+    const { prisma, razorpay, eventEmitter, service } = createDeps();
+    razorpay.verifyWebhookSignature.mockReturnValue(true);
+    prisma.paymentWebhookEvent.create.mockResolvedValue({});
+    prisma.payment.findFirst.mockResolvedValue(
+      makePayment({ providerPaymentId: 'pay_webhook_1', status: 'REFUNDED' }),
+    );
+    prisma.refund.findFirst.mockResolvedValue({
+      id: 'refund-1',
+      status: 'PROCESSED',
+      providerRefundId: 'rfnd_test1',
+    });
+
+    await service.handleWebhookEvent(
+      refundWebhookBody('refund.processed'),
+      'sig',
+      'evt_refund_3',
+    );
+
+    expect(prisma.refund.findMany).not.toHaveBeenCalled();
+    expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+      'payment.refunded',
+      expect.anything(),
+    );
+  });
+
+  it('backs off without guessing when no PENDING refund of that amount exists for the payment', async () => {
+    const { prisma, razorpay, eventEmitter, service } = createDeps();
+    razorpay.verifyWebhookSignature.mockReturnValue(true);
+    prisma.paymentWebhookEvent.create.mockResolvedValue({});
+    prisma.payment.findFirst.mockResolvedValue(
+      makePayment({ providerPaymentId: 'pay_webhook_1', status: 'CAPTURED' }),
+    );
+    prisma.refund.findFirst.mockResolvedValue(null);
+    prisma.refund.findMany.mockResolvedValue([]); // nothing pending — already reconciled some other way, or not ours
+
+    await service.handleWebhookEvent(
+      refundWebhookBody('refund.processed'),
+      'sig',
+      'evt_refund_4',
+    );
+
+    expect(prisma.refund.update).not.toHaveBeenCalled();
+    expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+      'payment.refunded',
+      expect.anything(),
+    );
+  });
+
+  it('backs off without guessing when MULTIPLE PENDING refunds of that amount exist for the payment — never picks one arbitrarily', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    razorpay.verifyWebhookSignature.mockReturnValue(true);
+    prisma.paymentWebhookEvent.create.mockResolvedValue({});
+    prisma.payment.findFirst.mockResolvedValue(
+      makePayment({ providerPaymentId: 'pay_webhook_1', status: 'CAPTURED' }),
+    );
+    prisma.refund.findFirst.mockResolvedValue(null);
+    prisma.refund.findMany.mockResolvedValue([
+      { id: 'refund-1', status: 'PENDING', amount: decimal(500), reason: null },
+      { id: 'refund-2', status: 'PENDING', amount: decimal(500), reason: null },
+    ]);
+
+    await service.handleWebhookEvent(
+      refundWebhookBody('refund.processed'),
+      'sig',
+      'evt_refund_5',
+    );
+
+    expect(prisma.refund.update).not.toHaveBeenCalled();
+  });
+
+  it('backs off cleanly when the webhook references a payment this system has no record of', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    razorpay.verifyWebhookSignature.mockReturnValue(true);
+    prisma.paymentWebhookEvent.create.mockResolvedValue({});
+    prisma.payment.findFirst.mockResolvedValue(null);
+
+    const result = await service.handleWebhookEvent(
+      refundWebhookBody('refund.processed'),
+      'sig',
+      'evt_refund_6',
+    );
+
+    expect(result.status).toBe('processed');
+    expect(prisma.refund.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('PaymentsService.retry', () => {
+  it('opens a fresh Razorpay order against the SAME payment row rather than creating a second Payment — keyed by paymentId (Phase 2), not orderId', async () => {
+    const { prisma, razorpay, service } = createDeps();
+    prisma.payment.findUnique.mockResolvedValue(
+      makePayment({ status: 'FAILED' }),
+    );
+    razorpay.createOrder.mockResolvedValue({
+      providerOrderId: 'order_retry_1',
+    });
+
+    const result = await service.retry('pay-1', 'user-1');
+
+    expect(razorpay.createOrder).toHaveBeenCalledWith(
+      expect.objectContaining({ receipt: 'pay-1' }),
+    );
+    expect(result.gateway?.providerOrderId).toBe('order_retry_1');
+    expect(prisma.payment.update).toHaveBeenCalledWith({
+      where: { id: 'pay-1' },
+      data: { status: 'CREATED', providerOrderId: 'order_retry_1' },
+    });
+  });
+
+  it('refuses to retry a payment that already succeeded', async () => {
+    const { prisma, service } = createDeps();
+    prisma.payment.findUnique.mockResolvedValue(
+      makePayment({ status: 'CAPTURED' }),
+    );
+
+    await expect(service.retry('pay-1', 'user-1')).rejects.toThrow(
+      'This order has already been paid for.',
+    );
+  });
+
+  it('refuses to retry an already-expired payment', async () => {
+    const { prisma, service } = createDeps();
+    prisma.payment.findUnique.mockResolvedValue(
+      makePayment({ status: 'EXPIRED' }),
+    );
+
+    await expect(service.retry('pay-1', 'user-1')).rejects.toThrow(
+      'This payment has expired. Please start checkout again.',
+    );
+  });
+
+  it('refuses to retry a COD payment — there is no gateway attempt to retry', async () => {
+    const { prisma, service } = createDeps();
+    prisma.payment.findUnique.mockResolvedValue(
+      makePayment({ provider: 'COD', status: 'COD_PENDING' }),
+    );
+
+    await expect(service.retry('pay-1', 'user-1')).rejects.toThrow(
+      'Cash on Delivery orders cannot be retried.',
+    );
+  });
+
+  it("throws ForbiddenException for someone else's payment", async () => {
+    const { prisma, service } = createDeps();
+    prisma.payment.findUnique.mockResolvedValue(
+      makePayment({ userId: 'someone-else' }),
+    );
+
+    await expect(service.retry('pay-1', 'user-1')).rejects.toThrow(
+      ForbiddenException,
+    );
+  });
+
+  it('throws NotFoundException for an unknown payment', async () => {
+    const { prisma, service } = createDeps();
+    prisma.payment.findUnique.mockResolvedValue(null);
+
+    await expect(service.retry('unknown', 'user-1')).rejects.toThrow(
+      NotFoundException,
+    );
+  });
+});
+
+describe('PaymentsService.refund', () => {
+  it('refunds a captured payment against the real gateway and marks it REFUNDED', async () => {
+    const { orderTx, razorpay, service } = createDeps();
+    orderTx.payment.findUnique.mockResolvedValue(
+      makePayment({ status: 'CAPTURED', providerPaymentId: 'pay_abc' }),
+    );
+    orderTx.refund.aggregate
+      .mockResolvedValueOnce({ _sum: { amount: null } }) // nothing claimed yet, at reserve time
+      .mockResolvedValueOnce({ _sum: { amount: 71.3 } }); // the full amount, once this refund is PROCESSED
+    orderTx.refund.create.mockResolvedValue({
+      id: 'refund-1',
+      status: 'PENDING',
+    });
+    orderTx.refund.update.mockResolvedValue({
+      id: 'refund-1',
+      status: 'PROCESSED',
+      providerRefundId: 'rfnd_1',
+    });
+    razorpay.refund.mockResolvedValue({ providerRefundId: 'rfnd_1' });
+
+    const result = await service.refund('pay-1', {}, ADMIN_ACTOR);
+
+    expect(razorpay.refund).toHaveBeenCalledWith(
+      expect.objectContaining({ providerPaymentId: 'pay_abc' }),
+    );
+    expect(result.providerRefundId).toBe('rfnd_1');
+    expect(orderTx.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'REFUNDED' } }),
+    );
+  });
+
+  it('marks PARTIALLY_REFUNDED, not REFUNDED, when the refund amount is less than the full payment', async () => {
+    const { orderTx, razorpay, service } = createDeps();
+    orderTx.payment.findUnique.mockResolvedValue(
+      makePayment({
+        status: 'CAPTURED',
+        providerPaymentId: 'pay_abc',
+        amount: decimal(100),
+      }),
+    );
+    orderTx.refund.aggregate
+      .mockResolvedValueOnce({ _sum: { amount: null } })
+      .mockResolvedValueOnce({ _sum: { amount: 40 } });
+    orderTx.refund.create.mockResolvedValue({
+      id: 'refund-1',
+      status: 'PENDING',
+    });
+    orderTx.refund.update.mockResolvedValue({
+      id: 'refund-1',
+      status: 'PROCESSED',
+      providerRefundId: 'rfnd_1',
+    });
+    razorpay.refund.mockResolvedValue({ providerRefundId: 'rfnd_1' });
+
+    await service.refund('pay-1', { amount: 40 }, ADMIN_ACTOR);
+
+    expect(orderTx.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'PARTIALLY_REFUNDED' } }),
+    );
+  });
+
+  it('correctly marks REFUNDED (not PARTIALLY_REFUNDED again) once a second partial refund brings the true total to 100% — the exact sequential-accumulation bug this fix closes', async () => {
+    const { orderTx, razorpay, service } = createDeps();
+    orderTx.payment.findUnique.mockResolvedValue(
+      makePayment({
+        status: 'PARTIALLY_REFUNDED',
+        providerPaymentId: 'pay_abc',
+        amount: decimal(100),
+      }),
+    );
+    // 60 already PROCESSED from an earlier partial refund; this call asks for the remaining 40.
+    orderTx.refund.aggregate
+      .mockResolvedValueOnce({ _sum: { amount: 60 } })
+      .mockResolvedValueOnce({ _sum: { amount: 100 } });
+    orderTx.refund.create.mockResolvedValue({
+      id: 'refund-2',
+      status: 'PENDING',
+    });
+    orderTx.refund.update.mockResolvedValue({
+      id: 'refund-2',
+      status: 'PROCESSED',
+      providerRefundId: 'rfnd_2',
+    });
+    razorpay.refund.mockResolvedValue({ providerRefundId: 'rfnd_2' });
+
+    await service.refund('pay-1', { amount: 40 }, ADMIN_ACTOR);
+
+    expect(orderTx.payment.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { status: 'REFUNDED' } }),
+    );
+  });
+
+  it('rejects a refund that would exceed what remains refundable — closing both the concurrent-double-refund race and the sequential over-refund bug in one check', async () => {
+    const { orderTx, razorpay, service } = createDeps();
+    orderTx.payment.findUnique.mockResolvedValue(
+      makePayment({
+        status: 'PARTIALLY_REFUNDED',
+        providerPaymentId: 'pay_abc',
+        amount: decimal(100),
+      }),
+    );
+    // 60 already claimed (PENDING or PROCESSED — e.g. a concurrent refund's own reservation) — only 40 remains.
+    orderTx.refund.aggregate.mockResolvedValueOnce({ _sum: { amount: 60 } });
+
+    await expect(
+      service.refund('pay-1', { amount: 50 }, ADMIN_ACTOR),
+    ).rejects.toThrow(/only ₹40\.00 of this payment remains refundable/);
+    expect(razorpay.refund).not.toHaveBeenCalled();
+    expect(orderTx.refund.create).not.toHaveBeenCalled();
+  });
+
+  it('releases the PENDING claim (marks it FAILED) when the real gateway call throws, instead of leaving it stuck occupying refundable headroom', async () => {
+    const { prisma, orderTx, razorpay, service } = createDeps();
+    orderTx.payment.findUnique.mockResolvedValue(
+      makePayment({ status: 'CAPTURED', providerPaymentId: 'pay_abc' }),
+    );
+    orderTx.refund.aggregate.mockResolvedValueOnce({ _sum: { amount: null } });
+    orderTx.refund.create.mockResolvedValue({
+      id: 'refund-1',
+      status: 'PENDING',
+    });
+    razorpay.refund.mockRejectedValue(new Error('gateway unreachable'));
+
+    await expect(service.refund('pay-1', {}, ADMIN_ACTOR)).rejects.toThrow(
+      'gateway unreachable',
+    );
+
+    expect(prisma.refund.update).toHaveBeenCalledWith({
+      where: { id: 'refund-1' },
+      data: { status: 'FAILED' },
+    });
+    expect(orderTx.payment.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects refunding a payment that was never captured', async () => {
+    const { orderTx, service } = createDeps();
+    orderTx.payment.findUnique.mockResolvedValue(
+      makePayment({ status: 'CREATED' }),
+    );
+
+    await expect(service.refund('pay-1', {}, ADMIN_ACTOR)).rejects.toThrow(
+      'Only a captured payment can be refunded.',
+    );
+  });
+
+  it('rejects a duplicate refund of an already-fully-REFUNDED payment', async () => {
+    const { orderTx, service } = createDeps();
+    orderTx.payment.findUnique.mockResolvedValue(
+      makePayment({ status: 'REFUNDED' }),
+    );
+
+    await expect(service.refund('pay-1', {}, ADMIN_ACTOR)).rejects.toThrow(
+      'Only a captured payment can be refunded.',
+    );
+  });
+
+  it('emits PAYMENT_EVENTS.REFUNDED with the correct payment/refund/order info on a successful refund', async () => {
+    const { orderTx, razorpay, eventEmitter, service } = createDeps();
+    orderTx.payment.findUnique.mockResolvedValue(
+      makePayment({
+        status: 'CAPTURED',
+        providerPaymentId: 'pay_abc',
+        orderId: 'FOL-1',
+        userId: 'user-1',
+      }),
+    );
+    orderTx.refund.aggregate
+      .mockResolvedValueOnce({ _sum: { amount: null } })
+      .mockResolvedValueOnce({ _sum: { amount: 71.3 } });
+    orderTx.refund.create.mockResolvedValue({
+      id: 'refund-1',
+      status: 'PENDING',
+    });
+    orderTx.refund.update.mockResolvedValue({
+      id: 'refund-1',
+      status: 'PROCESSED',
+      providerRefundId: 'rfnd_1',
+    });
+    razorpay.refund.mockResolvedValue({ providerRefundId: 'rfnd_1' });
+
+    await service.refund('pay-1', {}, ADMIN_ACTOR);
+
+    expect(eventEmitter.emit).toHaveBeenCalledWith('payment.refunded', {
+      orderId: 'FOL-1',
+      userId: 'user-1',
+      paymentId: 'pay-1',
+      amount: 71.3,
+      refundId: 'refund-1',
+    });
+  });
+
+  it('does NOT emit PAYMENT_EVENTS.REFUNDED when the gateway refund call fails', async () => {
+    const { orderTx, razorpay, eventEmitter, service } = createDeps();
+    orderTx.payment.findUnique.mockResolvedValue(
+      makePayment({ status: 'CAPTURED', providerPaymentId: 'pay_abc' }),
+    );
+    orderTx.refund.aggregate.mockResolvedValueOnce({ _sum: { amount: null } });
+    orderTx.refund.create.mockResolvedValue({
+      id: 'refund-1',
+      status: 'PENDING',
+    });
+    razorpay.refund.mockRejectedValue(new Error('gateway unreachable'));
+
+    await expect(service.refund('pay-1', {}, ADMIN_ACTOR)).rejects.toThrow(
+      'gateway unreachable',
+    );
+
+    expect(eventEmitter.emit).not.toHaveBeenCalledWith(
+      'payment.refunded',
+      expect.anything(),
+    );
+  });
+
+  describe('audit trail — every entry point must audit a real refund, regardless of who/what triggered it', () => {
+    function setUpSuccessfulRefund(
+      orderTx: ReturnType<typeof createDeps>['orderTx'],
+      razorpay: ReturnType<typeof createDeps>['razorpay'],
+    ) {
+      orderTx.payment.findUnique.mockResolvedValue(
+        makePayment({ status: 'CAPTURED', providerPaymentId: 'pay_abc' }),
+      );
+      orderTx.refund.aggregate
+        .mockResolvedValueOnce({ _sum: { amount: null } })
+        .mockResolvedValueOnce({ _sum: { amount: 71.3 } });
+      orderTx.refund.create.mockResolvedValue({
+        id: 'refund-1',
+        status: 'PENDING',
+      });
+      orderTx.refund.update.mockResolvedValue({
+        id: 'refund-1',
+        status: 'PROCESSED',
+        providerRefundId: 'rfnd_1',
+      });
+      razorpay.refund.mockResolvedValue({ providerRefundId: 'rfnd_1' });
+    }
+
+    it('audits a successful admin-triggered refund with actorType "admin" and the admin ipAddress — preserving the pre-existing admin refund audit behavior', async () => {
+      const { orderTx, razorpay, auditService, service } = createDeps();
+      setUpSuccessfulRefund(orderTx, razorpay);
+
+      await service.refund(
+        'pay-1',
+        { reason: 'Customer requested' },
+        { actorId: 'admin-1', actorType: 'admin', ipAddress: '10.0.0.1' },
+      );
+
+      expect(auditService.log).toHaveBeenCalledWith({
+        actorId: 'admin-1',
+        action: 'PAYMENT_REFUND',
+        resource: 'payment',
+        resourceId: 'pay-1',
+        metadata: {
+          amount: 71.3,
+          reason: 'Customer requested',
+          refundId: 'refund-1',
+          actorType: 'admin',
+        },
+        ipAddress: '10.0.0.1',
+      });
+    });
+
+    it('audits a successful cancellation-triggered (system) refund with actorType "system" — the fix for the previously-unaudited cancellation path', async () => {
+      const { orderTx, razorpay, auditService, service } = createDeps();
+      setUpSuccessfulRefund(orderTx, razorpay);
+
+      await service.refund(
+        'pay-1',
+        { reason: 'Order cancelled: changed-mind' },
+        { actorId: 'user-1', actorType: 'system' },
+      );
+
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'user-1',
+          action: 'PAYMENT_REFUND',
+          resource: 'payment',
+          resourceId: 'pay-1',
+        }),
+      );
+      const [[loggedInput]] = auditService.log.mock.calls;
+      expect(loggedInput.metadata?.actorType).toBe('system');
+    });
+
+    it('never puts the provider refund/gateway payload into audit metadata — only amount/reason/refundId/actorType', async () => {
+      const { orderTx, razorpay, auditService, service } = createDeps();
+      setUpSuccessfulRefund(orderTx, razorpay);
+
+      await service.refund('pay-1', {}, ADMIN_ACTOR);
+
+      const [[loggedInput]] = auditService.log.mock.calls;
+      expect(Object.keys(loggedInput.metadata ?? {})).toEqual(
+        expect.arrayContaining(['amount', 'reason', 'refundId', 'actorType']),
+      );
+      expect(loggedInput.metadata).not.toHaveProperty('providerRefundId');
+      expect(loggedInput.metadata).not.toHaveProperty('providerPaymentId');
+    });
+
+    it('audits a failed refund attempt under a distinct action (PAYMENT_REFUND_FAILED), explicitly distinguishing attempt/failure from success', async () => {
+      const { orderTx, razorpay, auditService, service } = createDeps();
+      orderTx.payment.findUnique.mockResolvedValue(
+        makePayment({ status: 'CAPTURED', providerPaymentId: 'pay_abc' }),
+      );
+      orderTx.refund.aggregate.mockResolvedValueOnce({
+        _sum: { amount: null },
+      });
+      orderTx.refund.create.mockResolvedValue({
+        id: 'refund-1',
+        status: 'PENDING',
+      });
+      razorpay.refund.mockRejectedValue(new Error('gateway unreachable'));
+
+      await expect(
+        service.refund(
+          'pay-1',
+          { reason: 'Order cancelled: changed-mind' },
+          { actorId: 'user-1', actorType: 'system' },
+        ),
+      ).rejects.toThrow('gateway unreachable');
+
+      expect(auditService.log).toHaveBeenCalledWith(
+        expect.objectContaining({
+          actorId: 'user-1',
+          action: 'PAYMENT_REFUND_FAILED',
+          resource: 'payment',
+          resourceId: 'pay-1',
+        }),
+      );
+      const [[loggedInput]] = auditService.log.mock.calls;
+      expect(loggedInput.metadata?.actorType).toBe('system');
+      expect(loggedInput.metadata?.error).toBe('gateway unreachable');
+      expect(auditService.log).not.toHaveBeenCalledWith(
+        expect.objectContaining({ action: 'PAYMENT_REFUND' }),
+      );
+    });
+
+    it('does not audit a pre-flight rejection (never reached the gateway, no claim was ever created) — only genuine attempts are audited', async () => {
+      const { orderTx, auditService, service } = createDeps();
+      orderTx.payment.findUnique.mockResolvedValue(
+        makePayment({ status: 'CREATED' }),
+      );
+
+      await expect(service.refund('pay-1', {}, ADMIN_ACTOR)).rejects.toThrow(
+        'Only a captured payment can be refunded.',
+      );
+
+      expect(auditService.log).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('PaymentsService.expireStalePayments', () => {
+  it('expires a stale CREATED payment and releases its reservations', async () => {
+    const { prisma, inventoryService, service } = createDeps();
+    const stalePayment = makePayment({
+      status: 'CREATED',
+      createdAt: new Date(
+        Date.now() - (PAYMENT_EXPIRY_MINUTES + 5) * 60 * 1000,
+      ),
+      checkoutSnapshot: makeSnapshot({
+        items: [
+          {
+            productId: 'prod-1',
+            slug: 'monstera',
+            name: 'Monstera',
+            categorySlug: 'plants',
+            variantId: null,
+            variantLabel: null,
+            price: 65,
+            quantity: 1,
+            inventoryItemId: 'inv-1',
+            reservationId: 'res-a',
+            sellerId: null,
+          },
+          {
+            productId: 'prod-2',
+            slug: 'pothos',
+            name: 'Pothos',
+            categorySlug: 'plants',
+            variantId: null,
+            variantLabel: null,
+            price: 20,
+            quantity: 1,
+            inventoryItemId: 'inv-2',
+            reservationId: 'res-b',
+            sellerId: null,
+          },
+        ],
+      }),
+    });
+    prisma.payment.findMany.mockResolvedValue([stalePayment]);
+    prisma.payment.updateMany.mockResolvedValue({ count: 1 });
+
+    const count = await service.expireStalePayments();
+
+    expect(count).toBe(1);
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith({
+      where: { id: 'pay-1', status: 'CREATED' },
+      data: { status: 'EXPIRED' },
+    });
+    expect(inventoryService.releaseReservation).toHaveBeenCalledWith('res-a');
+    expect(inventoryService.releaseReservation).toHaveBeenCalledWith('res-b');
+  });
+
+  it('backs off entirely — releases nothing — when it loses the atomic CREATED→EXPIRED race to a concurrent capture', async () => {
+    const { prisma, inventoryService, service } = createDeps();
+    const stalePayment = makePayment({
+      status: 'CREATED',
+      createdAt: new Date(
+        Date.now() - (PAYMENT_EXPIRY_MINUTES + 5) * 60 * 1000,
+      ),
+    });
+    prisma.payment.findMany.mockResolvedValue([stalePayment]);
+    prisma.payment.updateMany.mockResolvedValue({ count: 0 }); // lost the race — already CAPTURED elsewhere
+
+    const count = await service.expireStalePayments();
+
+    expect(count).toBe(0);
+    expect(inventoryService.releaseReservation).not.toHaveBeenCalled();
+  });
+
+  it('only queries payments older than the expiry window', async () => {
+    const { prisma, service } = createDeps();
+    prisma.payment.findMany.mockResolvedValue([]);
+
+    await service.expireStalePayments();
+
+    const call = prisma.payment.findMany.mock.calls[0][0] as {
+      where: { status: string; createdAt: { lt: Date } };
+    };
+    expect(call.where.status).toBe('CREATED');
+    const ageMinutes = (Date.now() - call.where.createdAt.lt.getTime()) / 60000;
+    expect(ageMinutes).toBeCloseTo(PAYMENT_EXPIRY_MINUTES, 0);
+  });
+});

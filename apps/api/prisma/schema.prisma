@@ -1,0 +1,1901 @@
+// Folia API — Prisma schema
+//
+// Phase 1: Authentication & Users. Adds User, Session, Role, Permission,
+// PasswordResetToken, and EmailVerificationToken — the tables this
+// project's own phase breakdown assigns to Phase 1.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// A user's account. Passwords are never stored in plaintext — passwordHash
+/// is an Argon2id hash (see auth/auth.service.ts). role is a required
+/// relation, not a free-text string, so RBAC checks always resolve
+/// against a real, seeded Role row.
+model User {
+  id           String @id @default(uuid())
+  email        String @unique
+  passwordHash String
+
+  firstName String
+  lastName  String
+  phone     String?
+  avatarUrl String?
+
+  emailVerified   Boolean   @default(false)
+  emailVerifiedAt DateTime?
+
+  roleId String
+  role   Role   @relation(fields: [roleId], references: [id])
+
+  sessions                Session[]
+  cart                    Cart?
+  wishlistItems           WishlistItem[]
+  addresses               Address[]
+  orders                  Order[]
+  passwordResetTokens     PasswordResetToken[]
+  emailVerificationTokens EmailVerificationToken[]
+  notifications           Notification[]
+  storeCreditEntries      StoreCreditEntry[]
+  /// Marketplace Phase 1 — a user's own seller account, if they have one.
+  /// A user can hold both: `role` gaining 'seller' authorizes seller-scoped
+  /// actions, but customer-facing endpoints (orders, cart, wishlist, ...)
+  /// carry no @Roles() gate at all today, so a seller keeps shopping as a
+  /// normal customer unchanged — see docs/MARKETPLACE_PHASE0_ARCHITECTURE_ASSESSMENT.md §10.
+  seller                  Seller?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  /// Soft delete — never hard-delete a user (order history, audit trails,
+  /// and other tables reference user IDs and shouldn't dangle).
+  deletedAt DateTime?
+
+  @@index([roleId])
+  @@map("users")
+}
+
+/// A named role (e.g. "customer", "admin") — a set of permissions, not a
+/// free-text string on User, so every permission check resolves against
+/// real seeded data rather than string comparison scattered through the
+/// codebase.
+model Role {
+  id          String  @id @default(uuid())
+  name        String  @unique
+  description String?
+
+  users       User[]
+  permissions Permission[] @relation("RolePermissions")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("roles")
+}
+
+/// A single, fine-grained capability (e.g. "orders:read", "products:write").
+/// Phase 1 seeds a minimal set for "customer" and "admin"; Phase 9's admin
+/// RBAC work extends this without a schema change — new permissions are
+/// new rows, not new columns.
+model Permission {
+  id          String  @id @default(uuid())
+  key         String  @unique
+  description String?
+
+  roles Role[] @relation("RolePermissions")
+
+  createdAt DateTime @default(now())
+
+  @@map("permissions")
+}
+
+/// One issued refresh token per row (hashed, never stored raw) — this is
+/// what makes "Sessions" and "Device Tracking" real capabilities rather
+/// than just a JWT claim: a user (or an admin) can see and individually
+/// revoke each active session, and a compromised refresh token can be
+/// revoked without invalidating every other session.
+model Session {
+  id               String    @id @default(uuid())
+  userId           String
+  user             User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  refreshTokenHash String    @unique
+  userAgent        String?
+  ipAddress        String?
+  deviceName       String?
+  createdAt        DateTime  @default(now())
+  lastUsedAt       DateTime  @default(now())
+  expiresAt        DateTime
+  revokedAt        DateTime?
+
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// Short-lived, single-use, hashed reset tokens. devToken is returned
+/// directly by the API in non-production environments only (see
+/// auth.service.ts) — there is no email-sending infrastructure yet
+/// (that's Phase 8's "Notifications: Email" deliverable), so this mirrors
+/// exactly how the frontend's existing mock backend already behaves
+/// (apps/web/src/mocks/authHandlers.ts's devToken pattern), rather than
+/// pretending email delivery exists when it doesn't.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("password_reset_tokens")
+}
+
+/// Same devToken pattern as PasswordResetToken, same reason.
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+  @@map("email_verification_tokens")
+}
+
+// --- Phase 2: Product Catalog ---
+
+enum CategoryType {
+  CATEGORY
+  COLLECTION
+}
+
+/// Categories and collections share one table (identical shape — slug,
+/// name, description) with a `type` discriminator, rather than two
+/// near-duplicate tables. Matches apps/web/src/types/product.ts's
+/// `Category` type exactly — used for both GET /categories (type=CATEGORY)
+/// and GET /collections/:slug (type=COLLECTION).
+model Category {
+  id          String       @id @default(uuid())
+  slug        String       @unique
+  name        String
+  description String
+  type        CategoryType
+
+  products Product[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("categories")
+}
+
+/// Explicitly requested in Phase 2's schema list. Not yet surfaced
+/// anywhere in apps/web's UI or Product type — included as real,
+/// queryable infrastructure ahead of the frontend feature that will
+/// eventually use it, not a placeholder.
+model Brand {
+  id   String @id @default(uuid())
+  slug String @unique
+  name String
+
+  products Product[]
+
+  @@map("brands")
+}
+
+/// DECLARATION ORDER MATTERS: PostgreSQL enums compare by the position a
+/// value was declared in, not alphabetically or by insertion time.
+/// ProductsService's "featured" sort relies on BESTSELLER being the LAST
+/// value declared here so that `ORDER BY badge DESC` puts bestsellers
+/// first — reordering this enum without updating that sort logic (and
+/// its explicit `nulls: 'last'` handling — Postgres's DESC default is
+/// NULLS FIRST, which would otherwise put every non-badged product ahead
+/// of actual bestsellers) will silently break "featured" sort. See
+/// products.service.ts's buildOrderBy() for the full explanation.
+enum ProductBadge {
+  NEW
+  SALE
+  LOW_STOCK
+  BESTSELLER
+}
+
+enum CareLevel {
+  EASY
+  MODERATE
+  ADVANCED
+}
+
+/// Marketplace Phase 1 — see Product.ownerType's own comment for the
+/// backfill reasoning.
+enum ProductOwnerType {
+  FOLIA_OWNED
+  SELLER_OWNED
+}
+
+/// Marketplace Phase 1. DRAFT/SUBMITTED/UNDER_REVIEW/APPROVED/ACTIVE form
+/// the seller product-listing pipeline; REJECTED loops back to DRAFT (per
+/// the governing brief's exact lifecycle) rather than being terminal, so a
+/// seller can revise and resubmit the same product row instead of starting
+/// over. ARCHIVED is the seller's own "unlist this" action, distinct from
+/// admin REJECTED/deactivation. Every existing pre-marketplace Product row
+/// backfills to ACTIVE (see Product.approvalStatus's own comment) — this
+/// enum's ordering therefore does NOT carry the same NULLS-FIRST/ORDER BY
+/// sorting significance ProductBadge's declaration order does; nothing
+/// sorts on this column today.
+enum ProductApprovalStatus {
+  DRAFT
+  SUBMITTED
+  UNDER_REVIEW
+  REJECTED
+  APPROVED
+  ACTIVE
+  ARCHIVED
+}
+
+model Product {
+  id             String   @id @default(uuid())
+  slug           String   @unique
+  name           String
+  price          Decimal  @db.Decimal(10, 2)
+  compareAtPrice Decimal? @db.Decimal(10, 2)
+  description    String
+
+  categoryId String
+  category   Category @relation(fields: [categoryId], references: [id])
+
+  brandId String?
+  brand   Brand?  @relation(fields: [brandId], references: [id])
+
+  /// Marketplace Phase 1 — nullable ONLY for backward compatibility with
+  /// existing Folia-owned catalog data (ownerType distinguishes the two
+  /// cases unambiguously; sellerId is never meaningfully null for a
+  /// SELLER_OWNED product — enforced in SellersService, not the schema,
+  /// same convention as this schema's other application-enforced
+  /// invariants). onDelete: Restrict — a seller account is deactivated,
+  /// never hard-deleted while it still owns product rows.
+  sellerId String?
+  seller   Seller? @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+
+  /// Every existing row backfills to FOLIA_OWNED at migration time (the
+  /// column default), which is unambiguously correct — every product that
+  /// existed before this migration genuinely was Folia's own catalog.
+  ownerType ProductOwnerType @default(FOLIA_OWNED)
+
+  /// Every existing row backfills to ACTIVE — an already-live product does
+  /// not silently re-enter moderation the moment this migration runs. New
+  /// SELLER_OWNED products start at DRAFT instead (set explicitly by
+  /// SellersService at creation, not by this column default, since the
+  /// default only needs to be correct for the backfill case).
+  approvalStatus ProductApprovalStatus @default(ACTIVE)
+  /// Set by an admin on REJECTED — see ProductApprovalStatus's own comment.
+  rejectionNote  String?
+
+  badge       ProductBadge?
+  careLevel   CareLevel?
+  rating      Decimal?      @db.Decimal(2, 1)
+  reviewCount Int           @default(0)
+
+  inStock    Boolean @default(true)
+  stockCount Int     @default(0)
+
+  variants       ProductVariant[]
+  specs          ProductSpec[]
+  images         ProductImage[]
+  reviews        Review[]
+  inventoryItems InventoryItem[]
+  cartItems      CartItem[]
+  wishlistedBy   WishlistItem[]
+  tags           Tag[]            @relation("ProductTags")
+
+  /// Slugs of the curated collections (categories with type COLLECTION) this
+  /// product is listed in. Kept as a plain slug list because a collection is
+  /// a merchandising grouping, not a place the product lives.
+  collectionSlugs String[] @default([])
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  /// Soft delete — matches User's pattern (Phase 1). A deleted product
+  /// shouldn't vanish from historical order line items that reference it.
+  deletedAt DateTime?
+
+  @@index([categoryId])
+  @@index([brandId])
+  @@index([sellerId])
+  @@index([approvalStatus])
+  @@map("products")
+}
+
+/// Matches apps/web's ProductVariant exactly — a simple label + optional
+/// color swatch + in-stock flag, not a full SKU/pricing-per-variant
+/// system (the frontend's product page doesn't price variants
+/// differently, so this doesn't invent that capability speculatively).
+model ProductVariant {
+  id             String          @id @default(uuid())
+  productId      String
+  product        Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  label          String
+  swatch         String?
+  inStock        Boolean         @default(true)
+  inventoryItems InventoryItem[]
+  cartItems      CartItem[]
+
+  @@index([productId])
+  @@map("product_variants")
+}
+
+/// Matches apps/web's ProductSpec exactly (label/value pairs — "Light: Bright indirect").
+model ProductSpec {
+  id        String  @id @default(uuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  label     String
+  value     String
+
+  @@index([productId])
+  @@map("product_specs")
+}
+
+/// Explicitly requested in Phase 2's schema list. apps/web deliberately
+/// uses placeholder blocks instead of real product photography (a
+/// documented Phase 1 frontend decision, apps/web/ARCHITECTURE.md) — this
+/// table exists as real, queryable infrastructure for whenever that
+/// changes, not because the current frontend renders it.
+model ProductImage {
+  id        String  @id @default(uuid())
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+  url       String
+  /// Marketplace Phase 3 — the StorageService-internal key (distinct from
+  /// `url`), so a row can later be genuinely deleted from storage, not
+  /// just this table. Nullable because it didn't exist before this
+  /// column was added — this schema's existing sibling table,
+  /// ReturnEvidence, has the identical gap (url-only, no key), which is
+  /// why no return-evidence delete endpoint exists; SellerProductsService.
+  /// deleteMedia is the first real "delete an already-persisted upload"
+  /// feature this codebase has, so it's the first place this was needed.
+  key       String?
+  altText   String?
+  position  Int     @default(0)
+
+  @@index([productId])
+  @@map("product_images")
+}
+
+/// Explicitly requested in Phase 2's schema list. Same status as Brand/
+/// ProductImage — real infrastructure, not yet consumed by apps/web's
+/// Product type (which has no `tags` field currently).
+model Tag {
+  id   String @id @default(uuid())
+  name String @unique
+
+  products Product[] @relation("ProductTags")
+
+  @@map("tags")
+}
+
+/// Matches apps/web's Review type exactly. Marketplace Phase 13 — until
+/// this phase, every row here was seed-time-only display data: `author`
+/// was a plain string with no real account behind it and `verified` was
+/// never computed from an actual purchase. `userId` (nullable — every
+/// pre-Phase-13 seeded review keeps it null; a real review always sets
+/// it) is what makes ReviewsService.createReview's verified-purchase gate
+/// and the @@unique constraint below possible, without touching a single
+/// existing seeded row. No FK relation to User, matching this schema's
+/// existing convention for a reference-only column that isn't
+/// cascade-relevant (see Order.userId's own comment) — a deleted account
+/// should not delete its own real reviews.
+model Review {
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  userId    String?
+  author    String
+  rating    Int
+  title     String
+  body      String
+  date      DateTime
+  verified  Boolean  @default(false)
+
+  /// Postgres treats every NULL as distinct under a unique constraint, so
+  /// this only ever enforces "one review per (product, real userId)" —
+  /// the unlimited NULL-userId seeded rows for the same product are
+  /// completely unaffected. The real, race-proof duplicate-review guard
+  /// (ReviewsService.createReview catches the resulting P2002 as a clean
+  /// 409), matching this codebase's established unique-constraint-as-
+  /// atomic-gate idiom used throughout this whole marketplace initiative.
+  @@unique([productId, userId])
+  @@index([productId])
+  @@map("reviews")
+}
+
+// --- Phase 3: Inventory ---
+
+model Warehouse {
+  id        String  @id @default(uuid())
+  code      String  @unique
+  name      String
+  isActive  Boolean @default(true)
+  /// Exactly one warehouse should be the default at any time — enforced
+  /// in WarehousesService.setDefault(), not at the schema level (Prisma/
+  /// Postgres don't support a "only one row where X=true" constraint
+  /// without a partial unique index, which is a reasonable upgrade for
+  /// Phase 10's "database indexes" hardening pass, not needed to make
+  /// this phase's actual behavior correct).
+  isDefault Boolean @default(false)
+
+  inventoryItems InventoryItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("warehouses")
+}
+
+/// One row per (product, variant, warehouse) — a product with no variants
+/// still gets exactly one InventoryItem per warehouse (variantId null); a
+/// product with variants gets one per variant per warehouse. This is the
+/// real stock-tracking unit; Product.stockCount/inStock and
+/// ProductVariant.inStock (both from Phase 2) are kept in sync as a
+/// derived cache whenever InventoryService adjusts stock here — Phase 2's
+/// read path (ProductsService, already built and tested) needed zero
+/// changes because of this design.
+model InventoryItem {
+  id  String @id @default(uuid())
+  sku String @unique
+
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+
+  quantityOnHand   Int @default(0)
+  quantityReserved Int @default(0)
+  reorderPoint     Int @default(0)
+
+  reservations StockReservation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([productId, variantId, warehouseId])
+  @@index([warehouseId])
+  @@map("inventory_items")
+}
+
+enum ReservationStatus {
+  ACTIVE
+  COMMITTED
+  RELEASED
+  EXPIRED
+}
+
+/// A hold against available stock (quantityOnHand - quantityReserved)
+/// that hasn't yet become a real deduction — created when someone adds an
+/// item to their cart at checkout time, before an order is confirmed.
+/// referenceId/referenceType are a plain string reference rather than a
+/// hard foreign key to a Cart or Order table, since neither exists yet in
+/// this backend (Phase 4/Phase 5's job) — this avoids Phase 3 reaching
+/// forward into schema those phases own.
+enum ReservationReferenceType {
+  CART
+  ORDER
+  /// Phase 2 (inventory concurrency + atomic checkout) — a checkout
+  /// attempt's reservations are held against the Payment id from the
+  /// moment checkout starts until that payment is confirmed (committed)
+  /// or fails/expires (released). This is the reference type
+  /// OrdersService.checkout actually uses; CART/ORDER predate this
+  /// design and are kept for any other reservation caller, not removed.
+  PAYMENT
+}
+
+model StockReservation {
+  id              String                   @id @default(uuid())
+  inventoryItemId String
+  inventoryItem   InventoryItem            @relation(fields: [inventoryItemId], references: [id], onDelete: Cascade)
+  quantity        Int
+  referenceType   ReservationReferenceType
+  referenceId     String
+  status          ReservationStatus        @default(ACTIVE)
+  expiresAt       DateTime
+  createdAt       DateTime                 @default(now())
+  updatedAt       DateTime                 @updatedAt
+
+  @@index([inventoryItemId])
+  @@index([referenceType, referenceId])
+  @@map("stock_reservations")
+}
+
+// --- Phase 4: Cart & Wishlist ---
+
+/// One cart per identity — either a logged-in user (userId) or an
+/// anonymous visitor (guestToken, delivered via an httpOnly cookie, same
+/// pattern as Session's refresh token). Never both null; enforced in
+/// CartService, not the schema (Prisma/Postgres don't have a clean way to
+/// express "at least one of these two columns is non-null" declaratively).
+model Cart {
+  id         String  @id @default(uuid())
+  userId     String? @unique
+  user       User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  guestToken String? @unique
+
+  items CartItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("carts")
+}
+
+/// unitPrice is a snapshot taken when the item is added — matches
+/// apps/web/src/types/cart.ts's CartItem doc comment exactly ("Unit price
+/// at the moment it was added — the cart doesn't retroactively track
+/// price changes"). The unique constraint on (cartId, productId,
+/// variantId) is what makes "add to cart" idempotent at the database
+/// level — adding the same product+variant again is a quantity update,
+/// not a second row, mirroring apps/web's buildLineId composite-key logic.
+model CartItem {
+  id        String          @id @default(uuid())
+  cartId    String
+  cart      Cart            @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  variantId String?
+  variant   ProductVariant? @relation(fields: [variantId], references: [id], onDelete: Cascade)
+  quantity  Int
+  unitPrice Decimal         @db.Decimal(10, 2)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([cartId, productId, variantId])
+  @@map("cart_items")
+}
+
+/// Backend-persisted wishlist is user-scoped only (requires
+/// authentication) — unlike cart, which supports anonymous guests. This
+/// mirrors how the frontend's *current* wishlist already behaves as a
+/// product-affinity list rather than a checkout artifact, and avoids
+/// building the same guest-identity plumbing a second time for a feature
+/// that doesn't obviously need it.
+model WishlistItem {
+  id        String  @id @default(uuid())
+  userId    String
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  addedAt DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@map("wishlist_items")
+}
+
+enum CouponType {
+  PERCENT
+  FIXED
+}
+
+/// Matches apps/web/src/types/cart.ts's Coupon shape, plus isActive/
+/// expiresAt for real admin lifecycle management (Phase 9's job to expose
+/// management endpoints for; this phase just needs the data to validate
+/// against).
+model Coupon {
+  id          String     @id @default(uuid())
+  code        String     @unique
+  type        CouponType
+  value       Decimal    @db.Decimal(10, 2)
+  description String
+  minSubtotal Decimal?   @db.Decimal(10, 2)
+  isActive    Boolean    @default(true)
+  expiresAt   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("coupons")
+}
+
+// --- Phase 5: Checkout ---
+
+enum AddressType {
+  HOME
+  OFFICE
+  OTHER
+}
+
+enum DeliveryTimeSlot {
+  MORNING
+  AFTERNOON
+  EVENING
+  ANYTIME
+}
+
+/// Matches apps/web/src/types/address.ts's Address exactly, field for
+/// field — including the geo placeholder (never a real geolocation
+/// lookup, same as the frontend's own explicit "mock" labeling).
+model Address {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  fullName       String
+  phone          String
+  alternatePhone String?
+  email          String?
+  companyName    String?
+
+  addressLine1         String
+  addressLine2         String?
+  landmark             String?
+  deliveryInstructions String?
+
+  city       String
+  state      String
+  country    String
+  postalCode String
+
+  type  AddressType
+  label String?
+
+  preferredTimeSlot DeliveryTimeSlot?
+  geoLat            Float?
+  geoLng            Float?
+
+  isDefaultShipping Boolean @default(false)
+  isDefaultBilling  Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("addresses")
+}
+
+enum DeliveryMethodType {
+  STANDARD
+  EXPRESS
+  SAME_DAY
+  PICKUP
+}
+
+enum PaymentMethodType {
+  CREDIT_CARD
+  DEBIT_CARD
+  UPI
+  NET_BANKING
+  COD
+  WALLET
+  /// Phase 6D — a $0 replacement order (DOA/damaged/incorrect-plant
+  /// resolution). Deliberately its own value rather than reusing COD: COD
+  /// genuinely means "cash is owed on delivery," which is false here.
+  /// provider stays COD on these Payments (accurately "no real gateway was
+  /// involved"), but method must say REPLACEMENT so nothing ever mistakes
+  /// this for money changing hands.
+  REPLACEMENT
+}
+
+/// No PENDING_PAYMENT state (Phase 1 briefly added one, Phase 2 removed
+/// it): an Order row is only ever created once payment is already
+/// confirmed (see OrdersService.confirmAndCreateOrder) — a gateway
+/// checkout that hasn't been paid for yet has a real Payment row, but no
+/// Order at all, so there's no "order, but unpaid" state to represent.
+enum OrderStatus {
+  PROCESSING
+  CONFIRMED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+  RETURNED
+  REFUNDED
+}
+
+/// RAZORPAY is the only real gateway integrated (Phase 1, India-first —
+/// see docs/API_INTEGRATION_STATUS.md for why). COD is modeled as a
+/// "provider" too so Payment's shape (status/attempts/refunds) is uniform
+/// across every payment method, including the one that never touches a
+/// real gateway — see PaymentsService's COD handling for why COD is still
+/// a real Payment row, never silently marked paid.
+enum PaymentProvider {
+  RAZORPAY
+  COD
+}
+
+/// CREATED: a Razorpay order exists, customer hasn't paid yet.
+/// CAPTURED: Razorpay confirmed the charge (via verify callback or,
+/// authoritatively, the webhook — see PaymentsService.confirmCapture).
+/// FAILED: Razorpay reported a decline; a fresh PaymentAttempt/Payment can
+/// be created for the same order (see PaymentsService.retry).
+/// EXPIRED: the Razorpay order was never completed and is no longer valid
+/// (set by the expiry sweep — see jobs/expire-stale-payments.processor.ts).
+/// COD_PENDING / COD_COLLECTED: COD's own lifecycle — never CAPTURED,
+/// since no gateway authorization ever happens; COD_COLLECTED is a real
+/// admin action recorded on actual delivery/cash collection, not implied
+/// by any order-status change.
+/// REFUNDED / PARTIALLY_REFUNDED: derived from this Payment's Refund rows
+/// summing to the full amount or less — see PaymentsService.refundStatus.
+enum PaymentStatus {
+  CREATED
+  CAPTURED
+  FAILED
+  EXPIRED
+  COD_PENDING
+  COD_COLLECTED
+  REFUNDED
+  PARTIALLY_REFUNDED
+  /// Phase 6D — the terminal status for a REPLACEMENT-method Payment.
+  /// Deliberately NOT CAPTURED (no real gateway settlement occurred) and
+  /// NOT COD_COLLECTED (no cash was ever collected) — both would falsely
+  /// imply real money moved, which would corrupt any future finance
+  /// reconciliation or "amount collected" reporting keyed on those
+  /// statuses. PaymentsService.refund()'s existing guard
+  /// (`status !== 'CAPTURED' && status !== 'PARTIALLY_REFUNDED'` → reject)
+  /// already safely refuses to refund a NO_CHARGE payment with zero
+  /// changes to that method.
+  NO_CHARGE
+}
+
+enum RefundStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+/// Matches apps/web/src/types/order.ts's Order exactly. Addresses are
+/// snapshotted as JSON (see shippingAddressSnapshot/billingAddressSnapshot
+/// below), not a live FK to Address, deliberately — an order's shipping/
+/// billing address must stay exactly what it was at checkout even if the
+/// customer later edits or deletes that address from their address book.
+model Order {
+  /// NOT @default(uuid()) — deliberately supplied explicitly at creation
+  /// by OrdersService, matching apps/web/src/utils/orderId.ts's
+  /// generateOrderId() format ("FOL-YYYYMMDD-NNNN") exactly. This is the
+  /// same string the frontend already displays as the order id/number,
+  /// and it's also the id passed to Shiprocket as the real shipment's
+  /// own "order_id" (Phase 5) so a support agent can correlate a
+  /// Shiprocket dashboard entry back to this order without a database
+  /// lookup — a random UUID here would be just as valid for that, but
+  /// there's no reason to change a format the frontend already displays.
+  id     String @id
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  status OrderStatus @default(PROCESSING)
+
+  items OrderItem[]
+
+  subtotal     Decimal @db.Decimal(10, 2)
+  discount     Decimal @default(0) @db.Decimal(10, 2)
+  couponCode   String?
+  shippingCost Decimal @db.Decimal(10, 2)
+  tax          Decimal @db.Decimal(10, 2)
+  total        Decimal @db.Decimal(10, 2)
+
+  /// The full Address object (apps/web/src/types/address.ts's shape,
+  /// including id) as it was at checkout time, stored as JSON rather than
+  /// duplicated as ~12 flat columns twice over (shipping + billing) — an
+  /// order needs to preserve the WHOLE address exactly as shown at
+  /// checkout, not just a queryable subset, and nothing about these
+  /// fields is ever filtered/sorted on independently. The live Address
+  /// row (if it still exists) may since have been edited or deleted;
+  /// this snapshot is what stays authoritative for the order.
+  shippingAddressSnapshot Json
+  billingAddressSnapshot  Json
+
+  deliveryMethod    DeliveryMethodType
+  estimatedDelivery String
+
+  paymentMethod        PaymentMethodType
+  /// Required again as of Phase 2 (inventory concurrency + atomic
+  /// checkout) — Phase 1 made these nullable because an order used to be
+  /// created before payment resolved. Phase 2's target checkout flow
+  /// (reserve -> pay -> confirm -> commit reservation -> create order)
+  /// means an Order row is now only ever created ONCE payment has
+  /// already been confirmed (see OrdersService.confirmAndCreateOrder),
+  /// so both are always known at creation time again — there is no
+  /// longer a "payment still pending" order state to represent (see
+  /// OrderStatus: PENDING_PAYMENT was removed for the same reason).
+  paymentDisplayLabel  String
+  paymentTransactionId String
+  /// Real payment record — see the Payment model. Optional on this side
+  /// only because Prisma requires the non-FK-owning side of a 1:1 relation
+  /// to be nullable in its type even though every Order created after
+  /// Phase 1 always gets exactly one Payment (enforced in
+  /// OrdersService.checkout, not at the DB level, matching this schema's
+  /// existing convention of application-enforced invariants like
+  /// Warehouse.isDefault).
+  payment              Payment?
+
+  /// Phase 5: no longer a fixed CourierId enum (5 fictional couriers,
+  /// deterministically assigned at checkout) — a real courier aggregator
+  /// (Shiprocket) can return any of dozens of real courier names, so this
+  /// is free text now. All three are null until an admin actually ships
+  /// the order (AdminOrdersController's POST .../ship, backed by
+  /// ShippingProviderClient.createShipment) — an Order is created the
+  /// moment payment resolves, which is genuinely before any courier has
+  /// been chosen or an AWB assigned; OrdersService.getTracking returns an
+  /// honest "awaiting fulfillment" response for these rather than
+  /// simulating transit for a shipment that doesn't exist yet.
+  courierId      String?
+  trackingNumber String?
+  /// A real, direct link to the shipment's tracking page on the
+  /// courier/aggregator's own site, when the provider returns one.
+  trackingUrl    String?
+  /// When the real shipment was actually created — distinct from
+  /// createdAt (order placement/payment time). OrdersService.getTracking
+  /// simulates progress from this timestamp once set, not from
+  /// createdAt, since a delivery window genuinely starts when a courier
+  /// takes the package, not when the order was placed.
+  shippedAt      DateTime?
+
+  /// Phase 6D — set exactly once, in OrdersService.adminUpdateStatus, the
+  /// moment status actually transitions to DELIVERED. Nothing else
+  /// captures this immutably: `updatedAt` changes on ANY write to this row
+  /// (e.g. a customerNotes edit), so relying on it for a return/DOA
+  /// eligibility window (14 days / 24 hours from delivery) would let an
+  /// unrelated later edit silently reset the clock. Null for every order
+  /// that hasn't been delivered yet, and for orders delivered before this
+  /// column existed until the one-time backfill migration below runs.
+  deliveredAt DateTime?
+
+  customerNotes String?
+
+  cancellation   CancellationRequest?
+  returnRequest  ReturnRequest?
+  /// Phase 6D — reverse side of ReturnRequest.replacementOrderId: set only
+  /// on the $0 replacement Order a DOA/damage claim resolution created,
+  /// never on a normally-checked-out order.
+  replacementFor ReturnRequest?       @relation("ReturnReplacementOrder")
+
+  /// Marketplace Phase 5 — this order's seller-fulfillment breakdown.
+  /// Always at least one row (Folia-only orders get a single sellerId:
+  /// null group) — see OrderSellerGroup's own comment.
+  sellerGroups OrderSellerGroup[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@map("orders")
+}
+
+/// Matches apps/web/src/types/order.ts's OrderItem exactly — a snapshot
+/// of product name/slug/category/price at the moment of purchase, same
+/// reasoning as CartItem's price snapshot (Phase 4) and Order's address
+/// snapshot above: an order must stay historically accurate even if the
+/// product is later renamed, repriced, or deleted.
+model OrderItem {
+  id           String  @id @default(uuid())
+  orderId      String
+  order        Order   @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId    String
+  slug         String
+  name         String
+  categorySlug String
+  variantId    String?
+  variantLabel String?
+  price        Decimal @db.Decimal(10, 2)
+  quantity     Int
+
+  /// Phase 1 (payments): which exact InventoryItem row this line's stock
+  /// was decremented from at checkout — set so a failed/expired payment
+  /// can restore stock to precisely the row it came from (see
+  /// InventoryService.restoreQuantity), not "a" row for this product that
+  /// happens to match. No FK relation, deliberately — same reasoning as
+  /// this model's own productId field: this is a point-in-time reference
+  /// for reversal, not a live relationship the order needs to survive an
+  /// inventory item being reorganized/deleted. Nullable because orders
+  /// created before this column existed have no value here.
+  inventoryItemId String?
+
+  /// Phase 6D — which return/DOA claim(s), if any, have claimed some
+  /// quantity of this line. An OrderItem can appear in at most one
+  /// ReturnRequestItem today (ReturnRequest.orderId stays @unique — see
+  /// that model's comment for why multiple claims per order aren't
+  /// supported yet), but the relation is still array-shaped on this side
+  /// since Prisma requires it for the reverse of a to-many relation.
+  returnClaims ReturnRequestItem[]
+
+  /// Marketplace Phase 5 — which seller-fulfillment bucket this line
+  /// belongs to (a group with sellerId: null for Folia-owned items).
+  /// REQUIRED, not nullable — unlike Product.sellerId (which stays null
+  /// forever for a genuinely Folia-owned product), every OrderItem gets a
+  /// real group either way; there is no "no group" state for an order
+  /// line. Existing pre-Phase-5 rows are backfilled to a single
+  /// Folia-only group per order in this same migration — see that
+  /// migration's own comment. No direct sellerId snapshot on this model:
+  /// ownership is derived through this relation
+  /// (orderSellerGroup.sellerId), not duplicated as a second column.
+  orderSellerGroupId String
+  orderSellerGroup   OrderSellerGroup @relation(fields: [orderSellerGroupId], references: [id], onDelete: Cascade)
+
+  /// Marketplace Phase 8 — the SellerCommission rate actually resolved for
+  /// this line at order-creation time (seller-specific override if one was
+  /// configured, else the marketplace default), and the amount computed
+  /// from it. Frozen here and never recomputed, even if the configured
+  /// rate is later changed — same "accurate to what was actually charged"
+  /// discipline as ReturnRequest.refundAmount. Always 0 for a Folia-owned
+  /// line (orderSellerGroup.sellerId null): Folia does not charge itself a
+  /// commission. Defaulted to 0 (not nullable) so every pre-Phase-8 order
+  /// line — all of them Folia-owned at the time — backfills to the
+  /// correct real value, not a placeholder.
+  commissionRatePercent Decimal @default(0) @db.Decimal(5, 2)
+  commissionAmount      Decimal @default(0) @db.Decimal(10, 2)
+
+  @@index([orderId])
+  @@index([productId])
+  @@index([orderSellerGroupId])
+  @@map("order_items")
+}
+
+/// Marketplace Phase 5 — one row per (Order, seller) pair; sellerId null
+/// is the Folia-fulfilled portion of the order. A single-seller-cart
+/// order (the only kind that existed before this phase, and still the
+/// common case) produces exactly one group — structurally identical to
+/// what every order already looked like, just represented through this
+/// table instead of scalar fields directly on Order. See
+/// docs/MARKETPLACE_PHASE0_ARCHITECTURE_ASSESSMENT.md §6 for the full
+/// design. Marketplace Phase 12 added the real per-group shipment fields
+/// below — Order's own courierId/trackingNumber/etc. now only ever get
+/// written for the trivial, still-common single-group case (see
+/// OrdersService.shipOrder, which delegates to the same real per-group
+/// mechanism this model backs and rolls the parent Order's own fields up
+/// only once every group is done).
+model OrderSellerGroup {
+  id      String @id @default(uuid())
+  orderId String
+  order   Order  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  sellerId String?
+  seller   Seller? @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+
+  /// Marketplace Phase 12 — now independently transitioned by
+  /// OrdersService.shipOrderSellerGroup/markGroupDelivered, the real
+  /// per-seller fulfillment actions this field's own original comment
+  /// deferred to this phase.
+  status OrderStatus @default(PROCESSING)
+
+  /// Marketplace Phase 12 — mirrors Order's own courierId/trackingNumber/
+  /// trackingUrl/shippedAt exactly, scoped to just this seller's own
+  /// shipment. All null until this group is actually shipped (see
+  /// OrdersService.shipOrderSellerGroup, backed by the same
+  /// ShippingProviderClient.createShipment this codebase's whole-order
+  /// shipping already used).
+  courierId      String?
+  trackingNumber String?
+  trackingUrl    String?
+  shippedAt      DateTime?
+  /// Marketplace Phase 12 — mirrors Order.deliveredAt exactly, scoped to
+  /// this group. Set exactly once, by OrdersService.markGroupDelivered
+  /// (admin-only, matching Order.deliveredAt's own "no real delivery
+  /// webhook exists yet" honesty).
+  deliveredAt DateTime?
+
+  /// SUM(price * quantity) across just this group's own OrderItems,
+  /// frozen at order-creation time — same "never silently recompute a
+  /// historical figure" discipline as every other pricing field on Order.
+  subtotal Decimal @db.Decimal(10, 2)
+
+  /// Marketplace Phase 8 — SUM(commissionAmount) across this group's own
+  /// OrderItems, frozen at the same time as subtotal above and for the
+  /// identical reason. Always 0 for the Folia-owned group (sellerId null).
+  commissionTotal Decimal @default(0) @db.Decimal(10, 2)
+
+  /// Marketplace Phase 10 — a private, seller-only fulfillment note (e.g.
+  /// "packed, ready for courier pickup Tuesday"). Never shown to the
+  /// customer or to Folia admin's own order view — this is the seller's
+  /// own working note about their own portion of the order, distinct from
+  /// Order.customerNotes (the customer's note to Folia). Deliberately NOT
+  /// a status transition: OrderSellerGroup.status itself stays untouched
+  /// by anything until Marketplace Phase 12's real per-seller shipment
+  /// action, per this model's own doc comment above.
+  sellerNote String?
+
+  items OrderItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orderId])
+  @@index([sellerId])
+  @@map("order_seller_groups")
+}
+
+/// One row per order, created the moment checkout starts (before the
+/// gateway has confirmed anything) — see OrdersService.checkout and
+/// PaymentsService. userId is a plain indexed column, not a User relation,
+/// same reasoning as OrderItem.productId above: this is a reference for
+/// filtering, not a cascade-relevant relationship (an order and its
+/// payment must survive exactly as long as each other, which the
+/// orderId → Order relation below already guarantees).
+/// Phase 2 (inventory concurrency + atomic checkout) changed WHEN this
+/// row's orderId gets set: checkout's target flow is now Reserve
+/// inventory -> Create payment -> Payment confirmation -> Commit
+/// reservation -> Create order -> Clear cart (this project's own Phase 2
+/// brief) — meaning a real Order does not exist yet when a gateway
+/// Payment is first created, only once that payment is actually
+/// confirmed. orderId is therefore nullable (Postgres allows more than
+/// one NULL under a unique constraint, so uniqueness once set is still
+/// enforced) and checkoutSnapshot carries everything
+/// OrdersService.confirmAndCreateOrder needs to create the real Order
+/// row at confirmation time, in the same transaction that commits this
+/// payment's reservations — see that method for why both must be atomic
+/// together.
+model Payment {
+  id      String  @id @default(uuid())
+  orderId String? @unique
+  order   Order?  @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId  String
+
+  /// Moved here from Order in Phase 2 — Payment, not Order, is now the
+  /// first thing created on checkout, so it's the natural idempotency
+  /// anchor. A repeated Idempotency-Key finds the existing Payment (and,
+  /// once confirmed, its Order) instead of ever starting a second
+  /// reservation/gateway-order attempt.
+  idempotencyKey String?
+
+  provider PaymentProvider
+  method   PaymentMethodType
+  status   PaymentStatus     @default(CREATED)
+
+  amount   Decimal @db.Decimal(10, 2)
+  currency String  @default("INR")
+
+  /// Razorpay's order_id (order_xxx) — set at creation for RAZORPAY,
+  /// always null for COD.
+  providerOrderId   String?
+  /// Razorpay's payment_id (pay_xxx) — set only once captured.
+  providerPaymentId String?
+  /// Already-masked, e.g. "Visa •••• 4242" / "Pay on delivery" — never raw
+  /// card/account data, matching this project's existing convention (see
+  /// the payment DTO this replaces).
+  displayLabel      String?
+
+  /// Everything OrdersService.confirmAndCreateOrder needs to create the
+  /// real Order row once this payment is confirmed: the pre-generated
+  /// order id, line items (with which InventoryItem each was reserved
+  /// against), address snapshots, computed pricing, delivery/courier
+  /// assignment, and customer notes. Written once at checkout time,
+  /// read exactly once at confirmation time, never updated after.
+  checkoutSnapshot Json?
+
+  attempts PaymentAttempt[]
+  refunds  Refund[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, idempotencyKey])
+  @@index([userId])
+  @@index([providerOrderId])
+  @@map("payments")
+}
+
+/// Append-only log of every create/verify/webhook outcome for a Payment —
+/// what PaymentsController's endpoints actually saw from Razorpay each
+/// time, including failures, so a declined card shows up as history, not
+/// just a final FAILED status with no record of what was tried.
+model PaymentAttempt {
+  id        String  @id @default(uuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  status            PaymentStatus
+  providerPaymentId String?
+  errorCode         String?
+  errorDescription  String?
+  /// Raw provider response/webhook payload for this attempt — kept for
+  /// real reconciliation/debugging, never rendered back to the customer.
+  rawResponse       Json?
+
+  createdAt DateTime @default(now())
+
+  @@index([paymentId])
+  @@map("payment_attempts")
+}
+
+/// A real refund against a real Payment. Distinct from CancellationRequest/
+/// ReturnRequest (Order-level, "did the customer ask for this") — Refund is
+/// Payment-level, "did the money actually move back." Phase 6 wires
+/// cancellation/return approval to creating these; Phase 1 only builds the
+/// gateway-facing half (PaymentsService.refund), since nothing upstream
+/// triggers a refund automatically yet.
+model Refund {
+  id        String  @id @default(uuid())
+  paymentId String
+  payment   Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  amount           Decimal      @db.Decimal(10, 2)
+  status           RefundStatus @default(PENDING)
+  providerRefundId String?
+  reason           String?
+
+  /// Phase 6D — reverse side of ReturnRequest.refundId. The pointer lives
+  /// on ReturnRequest, not here: PaymentsService.refund() (which creates
+  /// this row) has no reason to know about returns at all, and stamping
+  /// the link onto ReturnRequest right after refund() resolves needs zero
+  /// changes to that already-built, already-tested method.
+  returnRequest ReturnRequest?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([paymentId])
+  @@map("refunds")
+}
+
+/// Every inbound Razorpay webhook call, keyed on the provider's own event
+/// id — @unique on providerEventId is what makes webhook processing
+/// actually idempotent (a redelivered webhook is rejected by the DB
+/// constraint before any state changes, not by an in-memory check that a
+/// second server instance wouldn't share). processedAt is null until the
+/// handler finishes applying the event's effect; a webhook whose row exists
+/// but has a null processedAt means processing crashed partway and is safe
+/// to reprocess (the constraint only prevents *duplicate* processing, not
+/// *incomplete* processing).
+model PaymentWebhookEvent {
+  id              String          @id @default(uuid())
+  provider        PaymentProvider
+  providerEventId String          @unique
+  eventType       String
+  payload         Json
+  processedAt     DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@map("payment_webhook_events")
+}
+
+// --- Phase 6: Order Management (cancellation, returns, tracking) ---
+
+enum CancellationReason {
+  CHANGED_MIND
+  FOUND_CHEAPER
+  ORDERED_BY_MISTAKE
+  SHIPPING_TOO_SLOW
+  OTHER
+}
+
+enum ReturnReason {
+  NO_LONGER_NEEDED
+  WRONG_ITEM
+  DAMAGED_IN_TRANSIT
+  NOT_AS_DESCRIBED
+  CHANGED_MIND
+  OTHER
+  /// Phase 6D — "arrived dead/dying," a distinct failure mode from
+  /// DAMAGED_IN_TRANSIT (which implies physical shipping damage to
+  /// packaging/the item) — plant-claim-only, never valid for a non-plant
+  /// STANDARD_RETURN (enforced in application logic, not the enum itself).
+  DOA
+}
+
+/// Phase 6D — derived server-side from the claim's line items'
+/// categorySlug, never accepted from the client (same "don't trust the
+/// client" convention every payment endpoint already follows). Drives
+/// which eligibility window/evidence/reason rules apply — see
+/// return-policy.util.ts (Phase 6D-2).
+enum ReturnClaimType {
+  STANDARD_RETURN
+  DOA_CLAIM
+}
+
+/// Phase 6D. PENDING/APPROVED/REJECTED are the admin-decision states;
+/// REFUND_ISSUED/STORE_CREDIT_ISSUED/REPLACEMENT_ISSUED are the three
+/// possible terminal resolutions, kept as distinct values (not one
+/// generic RESOLVED + a resolutionType lookup) specifically so a
+/// STORE_CREDIT_ISSUED claim can never be displayed as "Refunded" by a
+/// future caller that forgets to also check resolutionType — the status
+/// itself already says which happened.
+enum ReturnRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  REFUND_ISSUED
+  STORE_CREDIT_ISSUED
+  REPLACEMENT_ISSUED
+}
+
+enum ReturnResolutionType {
+  REFUND
+  REPLACEMENT
+  /// COD orders only — PaymentsService.refund() is never called for these
+  /// (Razorpay never captured anything to refund). See StoreCreditEntry.
+  FOLIA_STORE_CREDIT
+}
+
+/// Phase 6D-4E — closes the KNOWN GAP documented in Phase 6D-4B's own
+/// design notes (docs/PHASE_6D_MIGRATION_DESIGN.md): once a prepaid
+/// claim's refundAmount is frozen, ReturnRequestStatus alone cannot tell
+/// "a refund attempt is currently calling Razorpay" apart from "a
+/// previous attempt failed and this is a safe retry" — both look
+/// identical (status still APPROVED, refundAmount already frozen). This
+/// state lives ONLY on the prepaid path; COD and REPLACEMENT have no such
+/// gap (see their own resolution methods' comments) and never touch this
+/// field.
+/// - NONE: never attempted (the default, and irrelevant again the moment
+///   status moves to REFUND_ISSUED, since that main status field is
+///   itself the permanent record of success).
+/// - IN_PROGRESS: a PaymentsService.refund() call is in flight. A second
+///   resolveClaim() call arriving while this is set is refused — this
+///   codebase cannot safely assume an in-flight call is dead, only that
+///   it has NOT yet reached a terminal state.
+/// - FAILED_RETRYABLE: the last attempt's gateway call failed (network
+///   error, Razorpay rejection, etc.) and PaymentsService.refund()'s own
+///   Refund row already reflects FAILED — safe to retry with the SAME
+///   frozen refundAmount, never recomputed.
+enum ReturnRefundAttemptState {
+  NONE
+  IN_PROGRESS
+  FAILED_RETRYABLE
+}
+
+/// Matches apps/web/src/types/order.ts's CancellationRequest. Deliberately
+/// has NO refundStatus column — apps/web/src/utils/refund.ts's
+/// deriveRefundStatus() computes it from elapsed time since requestedAt
+/// at READ time, never stores "refunded" directly (a real design choice
+/// worth preserving exactly, not simplifying away: it means a background
+/// job never needs to exist just to flip a status after some delay).
+/// hasRefund is false only when nothing was ever charged (a COD order
+/// cancelled before delivery) — matches the frontend's
+/// `refundStatus: RefundStatus | null` nullability exactly, just
+/// represented as a boolean since "null" here always means "no refund
+/// applies," not "refund not yet computed."
+model CancellationRequest {
+  id          String             @id @default(uuid())
+  orderId     String             @unique
+  order       Order              @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  reason      CancellationReason
+  note        String?
+  hasRefund   Boolean
+  requestedAt DateTime           @default(now())
+
+  @@map("cancellation_requests")
+}
+
+/// Phase 6D rewrite of the original whole-order, always-auto-approved
+/// ReturnRequest — see docs/PHASE_6D_MIGRATION_DESIGN.md for the full
+/// design discussion. `orderId` stays @unique (a Phase 6C-Design draft of
+/// this model proposed dropping it to allow multiple claims per order
+/// over time; reconsidered before this migration — nothing in the locked
+/// business rules actually requires that, partial/multi-item claims are
+/// already fully covered by ReturnRequestItem within ONE ReturnRequest,
+/// and keeping this unique constraint means a second concurrent claim
+/// attempt on the same order loses a plain unique-constraint race — the
+/// exact same P2002-to-clean-400 idiom CancellationRequest already uses —
+/// instead of needing new cross-claim aggregate-locking logic).
+model ReturnRequest {
+  id          String          @id @default(uuid())
+  orderId     String          @unique
+  order       Order           @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  /// Derived server-side at creation time from the claimed items'
+  /// categorySlug — see ReturnClaimType's own comment.
+  claimType   ReturnClaimType
+  reason      ReturnReason
+  note        String?
+  requestedAt DateTime        @default(now())
+
+  status ReturnRequestStatus @default(PENDING)
+
+  /// Photo/video evidence — a related table (ReturnEvidence), not a
+  /// scalar Postgres array column, matching this schema's existing
+  /// one-to-many-for-attachments convention (see ProductImage, the same
+  /// shape for a product's photos) rather than introducing this schema's
+  /// first scalar array column for a need an ordinary table already
+  /// covers just as well, with room to add per-item metadata later
+  /// (caption, contentType) with no further migration.
+  evidence ReturnEvidence[]
+  items    ReturnRequestItem[]
+
+  /// Set together at admin approval time; both null until then.
+  resolutionType           ReturnResolutionType?
+  /// Defaults applied by the service layer, not the schema, per claimType
+  /// (false for DOA_CLAIM, true for STANDARD_RETURN) — admin can override
+  /// either way at approval, so this stays a plain nullable boolean here.
+  requiresReverseLogistics Boolean?
+  /// Set by the admin "mark item received" action — only meaningful when
+  /// requiresReverseLogistics is true. Its presence (not a separate
+  /// status) is what gates executing the resolution once reverse
+  /// logistics applies — see ReturnRequestStatus's own comment for why
+  /// this isn't a named status instead.
+  itemReceivedAt           DateTime?
+
+  decidedBy    String?
+  decidedAt    DateTime?
+  decisionNote String?
+
+  /// The eligible amount computed from the order's real pricing snapshot
+  /// (see docs/PHASE_6D_MIGRATION_DESIGN.md's refund-calculation section),
+  /// frozen at the moment the admin approves — never silently recomputed
+  /// later if pricing logic changes, so a historical claim's record stays
+  /// accurate to what was actually decided. Meaningful for both
+  /// REFUND and FOLIA_STORE_CREDIT resolutions (REPLACEMENT has none —
+  /// stays null).
+  refundAmount Decimal? @db.Decimal(10, 2)
+
+  /// Phase 6D-4E — see ReturnRefundAttemptState's own comment for the full
+  /// reasoning. Meaningful only for the prepaid REFUND path; COD/
+  /// REPLACEMENT resolutions never read or write this field.
+  refundAttemptState ReturnRefundAttemptState @default(NONE)
+
+  /// Set once PaymentsService.refund() resolves successfully (REFUND
+  /// resolutions only) — the pointer lives here, not on Refund, so that
+  /// method needs zero changes to support returns (see Refund.returnRequest's
+  /// own comment).
+  refundId String? @unique
+  refund   Refund? @relation(fields: [refundId], references: [id], onDelete: Restrict)
+
+  /// Set once a StoreCreditEntry is issued (FOLIA_STORE_CREDIT
+  /// resolutions only). @unique enforces "at most one store-credit issuance
+  /// per claim" at the database level — the real idempotency guarantee a
+  /// duplicate approval/retry can't get around (see StoreCreditEntry's
+  /// own comment).
+  storeCreditEntry StoreCreditEntry?
+
+  /// Set once a $0 replacement Order is created (REPLACEMENT resolutions
+  /// only). @unique both prevents two claims pointing at the same
+  /// replacement order and, combined with only ever setting this via a
+  /// conditional "if still null" update, prevents a retried approval from
+  /// creating a second replacement order for the same claim.
+  replacementOrderId String? @unique
+  replacementOrder   Order?  @relation("ReturnReplacementOrder", fields: [replacementOrderId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("return_requests")
+}
+
+/// Phase 6D. One row per (claim, order line), carrying the quantity being
+/// claimed from that line — the only way to represent "return 1 of the 2
+/// units on this line" at all; nothing on OrderItem or the old
+/// whole-order ReturnRequest could express partial-quantity claims.
+model ReturnRequestItem {
+  id              String        @id @default(uuid())
+  returnRequestId String
+  returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  orderItemId     String
+  orderItem       OrderItem     @relation(fields: [orderItemId], references: [id], onDelete: Restrict)
+  quantity        Int
+
+  createdAt DateTime @default(now())
+
+  /// One row per (claim, line) — a claim can't list the same order line
+  /// twice; that's a data-entry bug, not a real scenario.
+  @@unique([returnRequestId, orderItemId])
+  @@index([orderItemId])
+  @@map("return_request_items")
+}
+
+/// Phase 6D. Photo/video evidence for a claim — see ReturnRequest.evidence's
+/// comment for why this is a table, not a scalar array column.
+model ReturnEvidence {
+  id              String        @id @default(uuid())
+  returnRequestId String
+  returnRequest   ReturnRequest @relation(fields: [returnRequestId], references: [id], onDelete: Cascade)
+  /// The StorageService-returned public URL (see storage/storage.interface.ts)
+  /// — the same reused upload infrastructure this session's Phase 6C-Design
+  /// recon confirmed already exists for avatars.
+  url             String
+  createdAt       DateTime      @default(now())
+
+  @@index([returnRequestId])
+  @@map("return_evidence")
+}
+
+/// Phase 6D. The smallest safe additive model for a real, persisted,
+/// auditable store-credit ledger — built because a COD return/DOA claim
+/// has no Razorpay transaction to refund at all (COD's Payment.providerPaymentId
+/// is always null), so PaymentsService.refund() can never be called for
+/// one; a fabricated "refunded" status was explicitly ruled out. A
+/// balance is always SUM(amount) for a user, computed on read — no
+/// separate cached balance column to keep in sync or let drift, the same
+/// "derive, don't cache" convention this codebase already uses for a
+/// Payment's remaining-refundable amount (PaymentsService.refund()'s own
+/// aggregate query). amount is always positive in Phase 6D (an issuance);
+/// the model is intentionally ledger-shaped (signed amounts sum to a
+/// balance) so a future redemption-at-checkout feature is just a
+/// negative-amount row here, needing no further migration — not built now,
+/// nothing in the locked rules asks for it yet.
+model StoreCreditEntry {
+  id     String @id @default(uuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  amount Decimal @db.Decimal(10, 2)
+  /// Free text, matching Refund.reason's own existing convention — there
+  /// is exactly one issuing reason today (a return/DOA resolution), not
+  /// worth an enum for.
+  reason String
+
+  /// @unique is the real idempotency guarantee: a duplicate approval or
+  /// retry attempting to issue store credit for the same claim a second
+  /// time hits a genuine database unique-constraint violation (P2002),
+  /// caught and treated as "already issued" — the exact same idiom
+  /// OrdersService.requestCancellation already uses for its own
+  /// concurrent-cancellation race.
+  returnRequestId String?        @unique
+  returnRequest   ReturnRequest? @relation(fields: [returnRequestId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+  @@map("store_credit_entries")
+}
+
+// --- Phase 7: Search ---
+
+/// Logs every search query actually performed, so "trending searches" can
+/// be computed from real usage (GROUP BY term, ORDER BY count) instead of
+/// the frontend's current static pool (apps/web/src/data/trendingSearches.ts).
+/// Deliberately minimal — no userId FK, no session tracking; this is
+/// aggregate-only data, not per-user analytics (which this phase
+/// explicitly defers — see CHANGELOG.md's Phase 7 entry for why).
+model SearchQuery {
+  id        String   @id @default(uuid())
+  term      String
+  createdAt DateTime @default(now())
+
+  @@index([term])
+  @@index([createdAt])
+  @@map("search_queries")
+}
+
+// --- Phase 8: Recommendations + Analytics ---
+
+enum AnalyticsEventType {
+  PRODUCT_VIEW
+  SEARCH
+  CATEGORY_VIEW
+  ADD_TO_CART
+  WISHLIST_ADD
+  CHECKOUT_STARTED
+  ORDER_CREATED
+  ORDER_COMPLETED
+  ORDER_CANCELLED
+  RECOMMENDATION_CLICK
+}
+
+/// A generic, append-only event log — the single source both "trending
+/// products" (recommendations) and the analytics aggregation endpoints
+/// read from, rather than two separate tracking systems. userId is
+/// nullable (most events, like a guest's PRODUCT_VIEW, have no
+/// authenticated actor); productId/orderId are nullable and only
+/// populated for event types where they're meaningful. metadata is a
+/// bounded JSON bag for event-specific extras (e.g. SEARCH's query term,
+/// ORDER_CREATED's total) — kept generic rather than one column per
+/// event type per field, which would grow unboundedly as event types are
+/// added.
+///
+/// DELIBERATELY NO foreign keys to User/Product/Order, unlike every other
+/// table in this schema — an analytics/audit trail should stay valid and
+/// queryable ("this product was viewed 40 times last month") even after
+/// the product itself is later deleted, and a logging write should never
+/// be able to fail because of a transactional-entity constraint. This is
+/// a standard, deliberate pattern for append-only event logs, not an
+/// oversight.
+model AnalyticsEvent {
+  id        String             @id @default(uuid())
+  type      AnalyticsEventType
+  userId    String?
+  productId String?
+  orderId   String?
+  metadata  Json?
+  createdAt DateTime           @default(now())
+
+  @@index([type, createdAt])
+  @@index([productId])
+  @@index([userId])
+  @@map("analytics_events")
+}
+
+// --- Phase 9: Admin Operations ---
+
+/// Real audit trail for sensitive admin actions — actor/action/resource/
+/// resourceId/metadata/timestamp, matching the roadmap's exact required
+/// fields. No foreign keys, same deliberate reasoning as AnalyticsEvent
+/// (Phase 8): an audit trail must remain queryable even after the actor
+/// or resource it references is later deleted, and a logging write must
+/// never fail because of a transactional-entity constraint. ipAddress is
+/// nullable — not every action originates from an HTTP request with a
+/// meaningful client IP to capture (e.g. a future scheduled job).
+/// NEVER stores passwords, tokens, or payment secrets in metadata — that
+/// discipline is enforced in AuditService, not the schema, the same way
+/// Pino's log redaction (main.ts) is enforced at the logging call site.
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  action     String
+  resource   String
+  resourceId String?
+  metadata   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([actorId])
+  @@index([resource, resourceId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+/// Phase 15 — real FK with cascade delete, deliberately unlike
+/// AuditLog's no-FK design just above: an audit trail needs to survive
+/// user deletion for compliance, but a notification inbox has no
+/// reason to outlive its user. No `archived` field, despite the
+/// frontend type having one — audited directly against every real call
+/// site before this migration: none of the six real trigger points
+/// (order placed/cancelled/return-requested, payment successful,
+/// profile updated, password changed) ever set it, so it wasn't
+/// carried into the real schema. A stated cut, not an oversight.
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  message   String
+  href      String?
+  read      Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@index([userId, createdAt])
+  @@index([userId, read])
+  @@map("notifications")
+}
+
+/// Matches apps/web/src/types/notification.ts's NotificationType exactly
+/// (uppercased, matching this schema's existing enum convention).
+/// Marketplace Phase 18 adds SELLER — seller-lifecycle, seller-product
+/// moderation, and payout-paid notifications all use this one type
+/// rather than overloading ACCOUNT, which reads as profile/password
+/// activity, not marketplace-seller activity.
+enum NotificationType {
+  ORDER
+  SHIPPING
+  PROMOTION
+  WISHLIST
+  ACCOUNT
+  SECURITY
+  SELLER
+}
+
+// --- Marketplace Phase 1: Seller Domain ---
+//
+// See docs/MARKETPLACE_PHASE0_ARCHITECTURE_ASSESSMENT.md for the full
+// design discussion this section implements. This is a separate initiative
+// from PRODUCTION_ROADMAP.md's own numbered phases (which are mid-flight
+// at Phase 6/7) — "Marketplace Phase N" always refers to this initiative's
+// own Phase 0-23 breakdown, never the roadmap's.
+
+/// The governing brief's lifecycle diagram (APPLIED -> UNDER_REVIEW ->
+/// APPROVED -> ACTIVE -> SUSPENDED -> DEACTIVATED), plus REJECTED —
+/// Marketplace Phase 2 addition, closing a real gap in Phase 1's own
+/// schema: the brief separately requires "no seller should be able to
+/// sell while APPLIED/UNDER_REVIEW/REJECTED/SUSPENDED/DEACTIVATED,"
+/// naming REJECTED as its own distinct state, and Phase 2's admin actions
+/// explicitly include "reject" — but Phase 1's enum only transcribed the
+/// diagram's five drawn boxes and missed it. No seller may sell while in
+/// any state but APPROVED/ACTIVE (the brief's own words: "Only
+/// approved/active sellers may sell") — that gate is enforced in
+/// SellersService/product-write services, not here.
+enum SellerStatus {
+  APPLIED
+  UNDER_REVIEW
+  REJECTED
+  APPROVED
+  ACTIVE
+  SUSPENDED
+  DEACTIVATED
+}
+
+enum SellerVerificationStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum SellerLedgerEntryType {
+  SALE
+  COMMISSION
+  REFUND
+  ADJUSTMENT
+  PAYOUT
+}
+
+enum SellerPayoutStatus {
+  PENDING
+  PROCESSING
+  PAID
+  FAILED
+  CANCELLED
+}
+
+/// The seller aggregate root. userId is @unique (one seller account per
+/// user, matching Cart's existing one-per-user pattern) — the brief allows
+/// a seller to also shop as an ordinary customer on the SAME account (see
+/// User.seller's own comment), not a second, separate login.
+model Seller {
+  id     String @id @default(uuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Restrict)
+
+  /// For /sellers/:slug — unique for the same reason Product.slug and
+  /// Category.slug already are.
+  slug        String  @unique
+  displayName String
+  description String
+  logoUrl     String?
+
+  /// Deliberately separate from the seller-user's own User.email/phone —
+  /// a seller's public storefront/support contact may reasonably differ
+  /// from the login email, and per the brief's own rule ("never expose
+  /// seller email... to customers"), this field is what a storefront is
+  /// allowed to show; User.email never is.
+  contactEmail String
+  contactPhone String
+
+  /// P0-F — India-commerce correctness. Nullable, not required: a seller
+  /// below GST's real registration turnover threshold (a business
+  /// decision, not something this schema should hardcode) legitimately
+  /// has no GSTIN yet. Format-validated at the DTO layer
+  /// (common/validators/india-locale.ts) against the real, publicly
+  /// documented 15-character GSTIN structure — this is a stable,
+  /// well-defined format, not a business-policy guess. Distinct from
+  /// SellerVerification's free-text "gst-certificate" document upload
+  /// (an unstructured file); this is the structured, queryable value.
+  gstin String? @unique
+
+  status        SellerStatus @default(APPLIED)
+  appliedAt     DateTime     @default(now())
+  approvedAt    DateTime?
+  /// Marketplace Phase 2. Set together on reject — mirrors Product.
+  /// rejectionNote's own shape/reasoning exactly.
+  rejectedAt    DateTime?
+  rejectionNote String?
+  suspendedAt   DateTime?
+  deactivatedAt DateTime?
+  /// Marketplace Phase 2 — set on suspend and deactivate alike (an admin
+  /// note explaining either action); nullable and reused across both
+  /// rather than two near-identical fields, since a Seller row is only
+  /// ever in one of those states at a time.
+  statusNote    String?
+
+  address       SellerAddress?
+  bankAccount   SellerBankAccount?
+  verifications SellerVerification[]
+  commissions   SellerCommission[]
+  ledgerEntries SellerLedgerEntry[]
+  payouts       SellerPayout[]
+  products      Product[]
+  /// Marketplace Phase 5 — this seller's own fulfillment bucket on every
+  /// multi-seller order they appear in.
+  orderGroups   OrderSellerGroup[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@map("sellers")
+}
+
+/// One row per submitted verification document — kept off the Seller row
+/// itself (not columns on Seller) so a routine seller-profile read never
+/// incidentally joins in verification-document URLs, matching this
+/// schema's existing separation of ReturnEvidence from ReturnRequest for
+/// the identical reason. documentUrl is a StorageService-returned URL
+/// (same reused upload infrastructure as return evidence/avatars) — never
+/// returned by any public or customer-facing API; admin read access is
+/// audited via AuditService, not enforced here.
+model SellerVerification {
+  id       String @id @default(uuid())
+  sellerId String
+  seller   Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  documentType String
+  documentUrl  String
+  status       SellerVerificationStatus @default(PENDING)
+
+  reviewedBy String?
+  reviewedAt DateTime?
+  note       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([sellerId])
+  @@map("seller_verifications")
+}
+
+/// A seller's business address — mirrors Address's existing field shape
+/// (Phase 5's model) rather than inventing a second address shape; this is
+/// business/operational data, not a customer shipping address, so it's its
+/// own table rather than reusing Address directly.
+model SellerAddress {
+  id       String @id @default(uuid())
+  sellerId String @unique
+  seller   Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  addressLine1 String
+  addressLine2 String?
+  city         String
+  state        String
+  country      String
+  postalCode   String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("seller_addresses")
+}
+
+/// Deliberately minimal — see docs/MARKETPLACE_PHASE0_ARCHITECTURE_ASSESSMENT.md
+/// §9 for the full reasoning. NO real payout provider is configured in
+/// this environment, so this table stores only what a human admin needs to
+/// manually verify/initiate a transfer OUTSIDE this system — never a full
+/// account number. If/when a real tokenizing payout provider (e.g.
+/// RazorpayX linked accounts) is integrated, the provider's own account
+/// reference token is the right thing to add here, NOT the raw number this
+/// deliberately never stores.
+model SellerBankAccount {
+  id       String @id @default(uuid())
+  sellerId String @unique
+  seller   Seller @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  accountHolderName  String
+  bankName           String
+  /// Last 4 digits only — see this model's own comment.
+  accountNumberLast4 String
+  ifsc               String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("seller_bank_accounts")
+}
+
+/// Versioned, never mutated in place — a rate change is a new row, not an
+/// UPDATE, so a historical order's frozen OrderItem.commissionRatePercent
+/// (Marketplace Phase 8) stays accurate to what was configured when it was
+/// charged, even if the rate is later changed. sellerId null means "the
+/// marketplace default"; a seller-specific row (sellerId set) overrides it.
+/// Resolved by SellerCommissionService.resolveEffectiveRate: the most
+/// recent row (by effectiveFrom) for the specific seller if one exists,
+/// else the most recent marketplace-default row.
+model SellerCommission {
+  id       String  @id @default(uuid())
+  sellerId String?
+  seller   Seller? @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+
+  ratePercent   Decimal  @db.Decimal(5, 2)
+  effectiveFrom DateTime @default(now())
+
+  createdAt DateTime @default(now())
+
+  @@index([sellerId])
+  @@map("seller_commissions")
+}
+
+/// The real, persisted seller financial ledger — a seller's balance is
+/// ALWAYS SUM(amount) for their id, computed on read, never a cached
+/// mutable balance column (the governing brief is explicit about this, and
+/// it matches StoreCreditEntry's existing derive-don't-cache design for
+/// the identical reason: a cached balance can drift from what actually
+/// happened; a ledger cannot). referenceType/referenceId are a free-text
+/// polymorphic pointer — deliberately NOT an enum yet, unlike
+/// StockReservation's closed CART/ORDER/PAYMENT set, because the real set
+/// of things a ledger entry can reference (an order item sale, a return
+/// refund, a payout, a manual admin adjustment) is genuinely still open
+/// and gets defined by the marketplace phases that actually write these
+/// rows (Phase 8 commission, Phase 9 payouts, Phase 11 returns) — locking
+/// an enum now would mean guessing at that set before it exists.
+model SellerLedgerEntry {
+  id       String @id @default(uuid())
+  sellerId String
+  seller   Seller @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+
+  type   SellerLedgerEntryType
+  amount Decimal               @db.Decimal(10, 2)
+
+  referenceType String?
+  referenceId   String?
+  note          String?
+
+  /// Reverse side of SellerPayoutItem.ledgerEntryId — see that model's
+  /// own comment for why this is @unique there (a ledger entry can be
+  /// claimed by at most one payout).
+  payoutItem SellerPayoutItem?
+
+  createdAt DateTime @default(now())
+
+  @@index([sellerId])
+  @@index([referenceType, referenceId])
+  @@map("seller_ledger_entries")
+}
+
+/// Explicit payout lifecycle per the governing brief. idempotencyKey is
+/// @unique — the real guarantee a duplicate payout-initiation request
+/// can't create two payouts for the same intent, same idempotency-via-
+/// unique-constraint idiom this schema already uses throughout (Payment's
+/// own idempotencyKey, StoreCreditEntry.returnRequestId).
+model SellerPayout {
+  id       String @id @default(uuid())
+  sellerId String
+  seller   Seller @relation(fields: [sellerId], references: [id], onDelete: Restrict)
+
+  status SellerPayoutStatus @default(PENDING)
+  amount Decimal            @db.Decimal(10, 2)
+
+  idempotencyKey String    @unique
+  failureReason  String?
+  processedAt    DateTime?
+
+  items SellerPayoutItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([sellerId])
+  @@map("seller_payouts")
+}
+
+/// One row per ledger entry a payout covers. ledgerEntryId is @unique —
+/// the real idempotency guarantee that the SAME ledger entry (e.g. one
+/// seller's commission-adjusted sale proceeds) can never be claimed by two
+/// different payouts, at the database level, not by application-level
+/// bookkeeping discipline alone.
+model SellerPayoutItem {
+  id       String       @id @default(uuid())
+  payoutId String
+  payout   SellerPayout @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+
+  ledgerEntryId String            @unique
+  ledgerEntry   SellerLedgerEntry @relation(fields: [ledgerEntryId], references: [id], onDelete: Restrict)
+
+  createdAt DateTime @default(now())
+
+  @@map("seller_payout_items")
+}
+
+// --- Enquiries: contact form, gardening-service and corporate-gifting requests ---
+
+enum EnquiryType {
+  GENERAL
+  GARDENING_SERVICE
+  CORPORATE_GIFTING
+}
+
+enum EnquiryStatus {
+  NEW
+  HANDLED
+}
+
+/// A message from a visitor that a person needs to answer. Stored so nothing
+/// is lost when email isn't configured; the admin queue reads from here.
+model Enquiry {
+  id      String        @id @default(uuid())
+  type    EnquiryType
+  status  EnquiryStatus @default(NEW)
+  name    String
+  email   String
+  phone   String?
+  subject String?
+  message String
+  /// Type-specific fields (city, service type, company, quantity, ...).
+  details Json?
+
+  createdAt DateTime  @default(now())
+  handledAt DateTime?
+
+  @@index([status, createdAt])
+  @@map("enquiries")
+}

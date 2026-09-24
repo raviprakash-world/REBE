@@ -1,0 +1,269 @@
+@import "tailwindcss";
+@import "@fontsource-variable/bricolage-grotesque";
+@import "@fontsource/inter/400.css";
+@import "@fontsource/inter/500.css";
+@import "@fontsource/inter/600.css";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+/* Class-based dark mode (manual light/dark/system selector), not the
+   media-query-only default — toggled by adding/removing `.dark` on <html>. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/*
+  Folia design tokens.
+  Palette named, not numbered — every color has a job, not a scale position.
+  See ARCHITECTURE.md's "Dark mode" section for the full palette rationale.
+*/
+@theme {
+  /* Color */
+  --color-pine: #1f3329;
+  --color-pine-light: #2b4638;
+  --color-fern: #4b7259;
+  --color-fern-light: #6a9179;
+  --color-fern-dark: #395a44;
+  --color-stone: #edeae1;
+  --color-stone-light: #f6f4ee;
+  --color-stone-dark: #ded9cb;
+  --color-ink: #1b1b18;
+  --color-ink-soft: #55534c;
+  --color-ochre: #c4903b;
+  --color-ochre-light: #d9a555;
+  --color-rust: #a6553c;
+  --color-rust-light: #f3e2dc;
+  /* Small text in the rust family: darker than --color-rust so it clears 4.5:1 on the warm backgrounds. */
+  --color-rust-text: #93472f;
+  /*
+    Light text for fixed dark fills (the pine hero/footer/buttons). `stone` and
+    `stone-light` invert in dark mode — right for surfaces, wrong for text that
+    sits on a fill that does NOT invert. These two never change.
+  */
+  --color-cream: #edeae1;
+  --color-cream-light: #f6f4ee;
+  /*
+    Heading text is its own token, deliberately separate from `pine` — pine
+    is also used as a *fill* color (buttons, hero/footer blocks, tags),
+    which must stay a fixed dark green in both themes since those blocks
+    pair it with light text. Heading text sits directly on the page
+    background instead, so it's the one role that needs to invert.
+    Starts equal to pine in light mode; overridden below for dark mode.
+  */
+  --color-heading: #1f3329;
+
+  /* Type */
+  --font-display: "Bricolage Grotesque Variable", "Bricolage Grotesque", sans-serif;
+  --font-body: "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+
+  /* Radius — controls stay tight, cards get soft corners, one circular exception (swatches) is set locally */
+  --radius-control: 6px;
+  --radius-card: 14px;
+  --radius-tag: 3px;
+
+  /* Shadow — warm-tinted, never pure black. Overridden for dark mode below. */
+  --shadow-soft: 0 1px 2px rgba(31, 51, 41, 0.06), 0 2px 8px rgba(31, 51, 41, 0.05);
+  --shadow-lifted: 0 4px 12px rgba(31, 51, 41, 0.08), 0 12px 32px rgba(31, 51, 41, 0.10);
+  --shadow-tag: 0 2px 4px rgba(31, 51, 41, 0.12);
+
+  /* Container widths */
+  --container-content: 1200px;
+  --container-narrow: 760px;
+
+  /* Breakpoints (Tailwind defaults kept; documented for reference) */
+  --breakpoint-xs: 30rem;
+}
+
+/*
+  Dark mode overrides. `stone`/`ink` (surfaces, borders, body text) invert —
+  they only ever play one role each, so a straight swap is safe. `pine`,
+  `fern`, `ochre`, and `rust` stay close to their light-mode values since
+  they're used as fill+contrasting-text pairs (buttons, tags, badges) that
+  would break if inverted wholesale; a few get a touch brighter for
+  legibility as isolated text/icons against a now-dark background.
+*/
+.dark {
+  --color-stone: #16211b;
+  --color-stone-light: #1e2b23;
+  --color-stone-dark: #33453a;
+  --color-ink: #ede9df;
+  --color-ink-soft: #bcbbb0;
+  --color-heading: #f1efe6;
+
+  --color-fern: #7fa88f;
+  --color-fern-light: #9ac1aa;
+  --color-fern-dark: #8fbba0;
+  --color-ochre: #d9a555;
+  --color-ochre-light: #e6bc7e;
+  --color-rust: #c97e62;
+  --color-rust-light: #3d2420;
+  --color-rust-text: #e39a82;
+
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.3), 0 2px 8px rgba(0, 0, 0, 0.24);
+  --shadow-lifted: 0 4px 12px rgba(0, 0, 0, 0.35), 0 12px 32px rgba(0, 0, 0, 0.3);
+  --shadow-tag: 0 2px 4px rgba(0, 0, 0, 0.4);
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    background-color: var(--color-stone);
+    color: var(--color-ink);
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: var(--font-display);
+    letter-spacing: -0.01em;
+  }
+
+  /* Smooth theme transitions — scoped to the properties that actually
+     change between themes, not a blanket `*` transition (expensive, and
+     would also animate unrelated hover/motion states). */
+  body,
+  [class*="bg-"],
+  [class*="text-"],
+  [class*="border-"] {
+    transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  /* Visible keyboard focus everywhere — non-negotiable for a11y, never suppressed */
+  :focus-visible {
+    outline: 2px solid var(--color-fern);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    html {
+      scroll-behavior: auto;
+    }
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+}
+
+@layer utilities {
+  .skip-link {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 100;
+    background: var(--color-pine);
+    color: white;
+    padding: 0.75rem 1.25rem;
+    border-radius: 0 0 var(--radius-control) 0;
+  }
+  .skip-link:focus {
+    left: 0;
+  }
+}
+
+/* Announcement ticker: the track holds two identical groups, so sliding it
+   by exactly half its width loops seamlessly. */
+@keyframes announce-scroll {
+  to {
+    transform: translateX(-50%);
+  }
+}
+@keyframes announce-sheen {
+  from {
+    transform: translateX(-120%) skewX(-20deg);
+  }
+  to {
+    transform: translateX(320%) skewX(-20deg);
+  }
+}
+.announce {
+  position: relative;
+  overflow: hidden;
+}
+.announce-viewport {
+  position: relative;
+  z-index: 1;
+  overflow: hidden;
+  mask-image: linear-gradient(to right, transparent, #000 4%, #000 96%, transparent);
+}
+.announce-track {
+  display: flex;
+  width: max-content;
+  animation: announce-scroll 38s linear infinite;
+}
+.announce-group {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: space-around;
+  gap: 3rem;
+  padding-inline: 1.5rem;
+  min-width: 100vw;
+}
+.announce:hover .announce-track,
+.announce:focus-within .announce-track,
+.announce[data-paused='true'] .announce-track {
+  animation-play-state: paused;
+}
+.announce::after {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 18%;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.35), transparent);
+  animation: announce-sheen 7s ease-in-out infinite;
+}
+.announce[data-paused='true']::after {
+  animation-play-state: paused;
+}
+@media (prefers-reduced-motion: reduce) {
+  .announce-track {
+    animation: none;
+    width: 100%;
+    justify-content: center;
+  }
+  .announce-group {
+    flex-wrap: wrap;
+    min-width: 0;
+    gap: 0.25rem 1.5rem;
+    justify-content: center;
+  }
+  .announce-group[inert] {
+    display: none;
+  }
+  .announce::after {
+    display: none;
+  }
+  .announce-viewport {
+    mask-image: none;
+  }
+}
+
+@keyframes heart-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.35); }
+  100% { transform: scale(1); }
+}
+.animate-heart-pop {
+  animation: heart-pop 0.35s ease-out;
+}
+
+/* iOS Safari zooms the whole page when a field under 16px gets focus. Keep every field at 16px on phones. */
+@media (max-width: 639px) {
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Grid children may shrink below their content width, so one wide child (a field, a long word) can't push the page sideways. */
+:where(.grid) > * {
+  min-width: 0;
+}
