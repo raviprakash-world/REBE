@@ -18,12 +18,12 @@ export interface CartItemRecord {
     categoryId: string;
     category: { slug: string };
     /** Marketplace Phase 5 — which seller owns this product (null =
-     * Tane-owned) and its current moderation status, both needed at
+     * Rebe-owned) and its current moderation status, both needed at
      * checkout time to re-validate a cart line is still purchasable and
      * to group order items by seller. */
     sellerId: string | null;
     approvalStatus: ProductApprovalStatus;
-    /** Marketplace Phase 16 — null for a Tane-owned line, matching sellerId's own nullability. */
+    /** Marketplace Phase 16 — null for a Rebe-owned line, matching sellerId's own nullability. */
     seller: { displayName: string } | null;
     /** Primary photo only (the cart include takes 1, ordered by position). */
     images?: { url: string }[];

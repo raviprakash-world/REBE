@@ -33,7 +33,7 @@ import type { Seller } from '@prisma/client';
  * row server-side — never a client-supplied sellerId) and every write in
  * SellerProductsService additionally scopes by that seller's id in the
  * query itself, so a product id belonging to another seller (or a
- * Tane-owned product) 404s exactly like a nonexistent one.
+ * Rebe-owned product) 404s exactly like a nonexistent one.
  */
 @ApiTags('sellers')
 @ApiBearerAuth()

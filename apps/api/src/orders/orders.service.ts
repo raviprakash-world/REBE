@@ -562,7 +562,7 @@ export class OrdersService {
     // pickup location) the moment a real multi-seller order reaches this
     // endpoint — refuse loudly and point at the real per-group action
     // instead of ever letting that happen. The trivial, still-common
-    // single-group case (a Tane-only or single-seller cart) delegates to
+    // single-group case (a Rebe-only or single-seller cart) delegates to
     // the exact same real mechanism unchanged.
     const groups = await this.prisma.orderSellerGroup.findMany({
       where: { orderId },
@@ -593,7 +593,7 @@ export class OrdersService {
    * side. `sellerId` scopes ownership when a seller is shipping their own
    * group (a mismatched/nonexistent group 404s, matching this whole
    * initiative's ownership-scoping-in-the-query convention); omit it for
-   * an admin shipping any group, including Tane's own (sellerId: null).
+   * an admin shipping any group, including Rebe's own (sellerId: null).
    */
   async shipOrderSellerGroup(groupId: string, sellerId?: string) {
     const group = await this.prisma.orderSellerGroup.findFirst({

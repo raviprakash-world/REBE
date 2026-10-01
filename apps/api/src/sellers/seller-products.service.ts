@@ -75,7 +75,7 @@ function slugify(input: string): string {
 /**
  * Marketplace Phase 3 — seller product listing. Deliberately its own
  * service (not folded into ProductsService, which owns the customer/
- * admin-catalog read/write paths that assume Tane ownership throughout)
+ * admin-catalog read/write paths that assume Rebe ownership throughout)
  * — every method here is sellerId-scoped, reusing InventoryService/
  * StorageService/AuditService rather than introducing parallel
  * mechanisms, matching this codebase's Marketplace Phase 1/2 precedent.
@@ -570,7 +570,7 @@ export class SellerProductsService {
 
   /** Never trusts a client-supplied sellerId — ownership is always this
    * query's own WHERE clause. A product that exists but belongs to
-   * another seller (or is Tane-owned, sellerId: null) 404s exactly like
+   * another seller (or is Rebe-owned, sellerId: null) 404s exactly like
    * a nonexistent one, matching this codebase's ownership-check
    * convention throughout. */
   private async findOwnedOrThrow(sellerId: string, productId: string) {

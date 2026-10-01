@@ -162,7 +162,7 @@ export const addressSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['country'],
-        message: 'Tane currently ships within India only.',
+        message: 'Rebe currently ships within India only.',
       });
     }
     if (!isValidPostalCode(data.postalCode)) {

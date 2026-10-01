@@ -60,7 +60,7 @@ const DOA_CLAIM_REASONS: ReturnReasonDb[] = [
 
 /**
  * Only these STANDARD_RETURN reasons are genuinely the customer's own
- * choice — WRONG_ITEM/DAMAGED_IN_TRANSIT/NOT_AS_DESCRIBED are Tane's
+ * choice — WRONG_ITEM/DAMAGED_IN_TRANSIT/NOT_AS_DESCRIBED are Rebe's
  * fault even for a non-plant item, so the return-shipping deduction never
  * applies to them either.
  */

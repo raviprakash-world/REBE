@@ -269,14 +269,14 @@ describe('PaymentsService.createForOrder — COD', () => {
   });
 
   describe('Marketplace Phase 5 — multi-seller order splitting', () => {
-    it('a cart of Tane + two sellers produces exactly three OrderSellerGroup rows, one per distinct seller', async () => {
+    it('a cart of Rebe + two sellers produces exactly three OrderSellerGroup rows, one per distinct seller', async () => {
       const { prisma, orderTx, service } = createDeps();
       const snapshot = makeSnapshot({
         items: [
           {
             productId: 'prod-folia',
             slug: 'folia-pot',
-            name: 'Tane Pot',
+            name: 'Rebe Pot',
             categorySlug: 'vessels',
             variantId: null,
             variantLabel: null,
@@ -368,7 +368,7 @@ describe('PaymentsService.createForOrder — COD', () => {
           {
             productId: 'prod-folia',
             slug: 'folia-pot',
-            name: 'Tane Pot',
+            name: 'Rebe Pot',
             categorySlug: 'vessels',
             variantId: null,
             variantLabel: null,
@@ -432,7 +432,7 @@ describe('PaymentsService.createForOrder — COD', () => {
   });
 
   describe('Marketplace Phase 8 — commission', () => {
-    it('resolves and freezes commission on each seller group, but always 0 for the Tane-owned group', async () => {
+    it('resolves and freezes commission on each seller group, but always 0 for the Rebe-owned group', async () => {
       const { prisma, orderTx, commissionService, service } = createDeps();
       commissionService.resolveEffectiveRate.mockImplementation(
         (sellerId: string) =>
@@ -447,7 +447,7 @@ describe('PaymentsService.createForOrder — COD', () => {
           {
             productId: 'prod-folia',
             slug: 'folia-pot',
-            name: 'Tane Pot',
+            name: 'Rebe Pot',
             categorySlug: 'vessels',
             variantId: null,
             variantLabel: null,
@@ -506,8 +506,8 @@ describe('PaymentsService.createForOrder — COD', () => {
         checkoutSnapshot: snapshot,
       });
 
-      // Never asked to resolve a rate for the Tane-owned bucket — there
-      // is no commission to resolve for a sale Tane makes to itself.
+      // Never asked to resolve a rate for the Rebe-owned bucket — there
+      // is no commission to resolve for a sale Rebe makes to itself.
       expect(commissionService.resolveEffectiveRate).not.toHaveBeenCalledWith(
         null,
         expect.anything(),
@@ -604,7 +604,7 @@ describe('PaymentsService.createForOrder — COD', () => {
   });
 
   describe('Marketplace Phase 9 — seller ledger', () => {
-    it('records SALE + COMMISSION proceeds for each real seller group, but never for the Tane-owned group', async () => {
+    it('records SALE + COMMISSION proceeds for each real seller group, but never for the Rebe-owned group', async () => {
       const { prisma, orderTx, commissionService, ledgerService, service } =
         createDeps();
       commissionService.resolveEffectiveRate.mockImplementation(
@@ -620,7 +620,7 @@ describe('PaymentsService.createForOrder — COD', () => {
           {
             productId: 'prod-folia',
             slug: 'folia-pot',
-            name: 'Tane Pot',
+            name: 'Rebe Pot',
             categorySlug: 'vessels',
             variantId: null,
             variantLabel: null,
@@ -989,7 +989,7 @@ describe('PaymentsService.verify', () => {
         {
           productId: 'prod-folia',
           slug: 'folia-pot',
-          name: 'Tane Pot',
+          name: 'Rebe Pot',
           categorySlug: 'vessels',
           variantId: null,
           variantLabel: null,

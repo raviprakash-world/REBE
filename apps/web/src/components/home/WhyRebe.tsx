@@ -31,10 +31,10 @@ const points = [
   },
 ];
 
-export function WhyTane() {
+export function WhyRebe() {
   return (
     <Container className="py-8 sm:py-12">
-      <SectionHeading title="Why shop with Tane" />
+      <SectionHeading title="Why shop with Rebe" />
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {points.map(({ Icon, title, text, to }) => (
           <li key={title}>

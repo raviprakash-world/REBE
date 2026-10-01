@@ -1,4 +1,4 @@
-// @tane/api-client
+// @rebe/api-client
 //
 // A typed client wrapping calls to the real API, meant to eventually
 // replace apps/web's direct axios usage (apps/web/src/services/*) one

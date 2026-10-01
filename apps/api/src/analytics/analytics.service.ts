@@ -260,7 +260,7 @@ export class AnalyticsService {
   /**
    * Marketplace Phase 14 — real marketplace GMV, split the same way
    * OrderSellerGroup itself already splits every order: sellerId null is
-   * Tane's own direct sales, sellerId set is real marketplace seller
+   * Rebe's own direct sales, sellerId set is real marketplace seller
    * sales. Sourced from OrderSellerGroup.subtotal/commissionTotal (both
    * frozen at order-creation time, Marketplace Phases 5/8) rather than
    * Order.total, for the identical "authoritative table over a derived
@@ -303,8 +303,8 @@ export class AnalyticsService {
   /**
    * Marketplace Phase 14 — real per-seller revenue ranking, same
    * groupBy-then-hydrate-names shape as getTopSellingProducts above.
-   * Tane's own sales (sellerId null) are deliberately excluded — this
-   * ranks marketplace sellers against each other, not against Tane
+   * Rebe's own sales (sellerId null) are deliberately excluded — this
+   * ranks marketplace sellers against each other, not against Rebe
    * itself.
    */
   async getTopSellers(

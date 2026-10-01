@@ -42,7 +42,7 @@ export class SellerAddressInputDto {
   // all India-only already; this makes that explicit instead of
   // silently accepting a value that breaks downstream.
   @ApiProperty({ enum: ['IN'], example: 'IN' })
-  @IsIn(['IN'], { message: 'Tane currently operates within India only.' })
+  @IsIn(['IN'], { message: 'Rebe currently operates within India only.' })
   country!: string;
 
   @ApiProperty({ example: '560001' })

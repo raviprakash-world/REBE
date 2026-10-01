@@ -1,4 +1,4 @@
-// @tane/shared-types
+// @rebe/shared-types
 //
 // Types shared between apps/web and apps/api — the contract both sides
 // agree on. Deliberately empty at Phase 0: the first real shared types
@@ -8,6 +8,6 @@
 // been reviewed.
 //
 // Usage once populated (from either app):
-//   import type { User } from '@tane/shared-types';
+//   import type { User } from '@rebe/shared-types';
 
 export {};

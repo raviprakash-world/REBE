@@ -88,7 +88,7 @@ describe('toPublicProduct', () => {
     expect(toPublicProduct(makeProduct()).images).toEqual([]);
   });
 
-  it("shipsFrom: Tane-owned products dispatch from Bengaluru; a seller product from its business address; unknown when the seller relation wasn't loaded or has no address", () => {
+  it("shipsFrom: Rebe-owned products dispatch from Bengaluru; a seller product from its business address; unknown when the seller relation wasn't loaded or has no address", () => {
     expect(toPublicProduct(makeProduct({ seller: null })).shipsFrom).toEqual({
       city: 'Bengaluru',
       state: 'Karnataka',
@@ -136,7 +136,7 @@ describe('toPublicProduct', () => {
     expect(result.createdAt).toBe('2026-07-29');
   });
 
-  it('Marketplace Phase 16 — omits seller entirely (not null) for a Tane-owned product', () => {
+  it('Marketplace Phase 16 — omits seller entirely (not null) for a Rebe-owned product', () => {
     const result = toPublicProduct(makeProduct({ seller: null }));
     expect(result.seller).toBeUndefined();
   });

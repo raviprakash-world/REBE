@@ -49,9 +49,9 @@ export interface Product {
   createdAt: string;
   /** Ordered primary-first. Absent/empty means "no photo yet" — every image component falls back to the placeholder block. */
   images?: ProductImage[];
-  /** Dispatch location: the seller's business address, or Tane's Bengaluru studio for Tane-owned products. Absent if unknown. */
+  /** Dispatch location: the seller's business address, or Rebe's Bengaluru studio for Rebe-owned products. Absent if unknown. */
   shipsFrom?: ShipsFrom;
-  /** Marketplace Phase 16 — absent for a Tane-owned product, matching the real API's own omit-rather-than-null convention (see toPublicProduct). */
+  /** Marketplace Phase 16 — absent for a Rebe-owned product, matching the real API's own omit-rather-than-null convention (see toPublicProduct). */
   seller?: ProductSeller;
 }
 

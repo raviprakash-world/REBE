@@ -16,7 +16,7 @@ const PRODUCT_INCLUDE = {
   images: { orderBy: { position: 'asc' } },
   // Marketplace Phase 16 — every customer-facing product read now also
   // carries its seller's public storefront identity (null for a
-  // Tane-owned product), so ProductDetail can attribute/link to it.
+  // Rebe-owned product), so ProductDetail can attribute/link to it.
   // Never selects anything beyond what's already public on
   // /sellers/:slug (SellersService.getPublicStorefront) — no email/
   // phone/internal status.
@@ -126,7 +126,7 @@ export class ProductsService {
       const state = { equals: query.shipFromState, mode: 'insensitive' };
       where.OR = [
         { seller: { is: { address: { is: { state } } } } },
-        // Tane-owned products (no seller) dispatch from FOLIA_ORIGIN.
+        // Rebe-owned products (no seller) dispatch from FOLIA_ORIGIN.
         ...(FOLIA_ORIGIN.state.toLowerCase() ===
         query.shipFromState.trim().toLowerCase()
           ? [{ sellerId: null }]

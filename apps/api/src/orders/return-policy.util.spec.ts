@@ -199,7 +199,7 @@ describe('calculateShippingDeduction', () => {
     );
   });
 
-  it("never deducts for a STANDARD_RETURN reason that is Tane's fault, not the customer's", () => {
+  it("never deducts for a STANDARD_RETURN reason that is Rebe's fault, not the customer's", () => {
     expect(calculateShippingDeduction('STANDARD_RETURN', 'WRONG_ITEM')).toBe(0);
     expect(
       calculateShippingDeduction('STANDARD_RETURN', 'DAMAGED_IN_TRANSIT'),

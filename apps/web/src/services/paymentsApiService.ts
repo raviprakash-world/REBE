@@ -124,9 +124,9 @@ export async function openRazorpayCheckout(
       amount: Math.round(gateway.amount * 100),
       currency: gateway.currency,
       order_id: gateway.providerOrderId,
-      name: 'Tane',
+      name: 'Rebe',
       description: orderDescription,
-      theme: { color: '#4b7259' }, // Tane's real --color-fern (apps/web/src/index.css), not a guess
+      theme: { color: '#4b7259' }, // Rebe's real --color-fern (apps/web/src/index.css), not a guess
       handler: (response) => {
         resolve({
           providerOrderId: response.razorpay_order_id,

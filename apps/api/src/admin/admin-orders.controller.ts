@@ -83,7 +83,7 @@ export class AdminOrdersController {
 
   /**
    * Marketplace Phase 12 — admin can ship any seller's own group,
-   * including Tane's own (sellerId: null), which has no seller account
+   * including Rebe's own (sellerId: null), which has no seller account
    * to self-serve it. See SellerFulfillmentController for the
    * seller-facing equivalent, scoped to their own groups only.
    */

@@ -91,7 +91,7 @@ export async function reverseGeocode(lat: number, lng: number): Promise<Detected
   const a = data.address;
   if (!a) throw new GeoError('lookup', "Couldn't look up an address for your location. Enter your PIN code instead.");
   if (a.country_code !== 'in') {
-    throw new GeoError('outside-india', 'Tane delivers within India only, and your location is outside India.');
+    throw new GeoError('outside-india', 'Rebe delivers within India only, and your location is outside India.');
   }
   const postalCode = (a.postcode ?? '').replace(/\s+/g, '');
   const city = a.city ?? a.town ?? a.village ?? a.county ?? a.state_district ?? '';

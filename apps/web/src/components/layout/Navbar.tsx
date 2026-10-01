@@ -87,7 +87,7 @@ export function Navbar() {
             >
               {mobileOpen ? <X size={22} /> : <Menu size={22} />}
             </button>
-            <Link to="/" aria-label="Tane home" className="flex min-h-11 items-center">
+            <Link to="/" aria-label="Rebe home" className="flex min-h-11 items-center">
               <Logo />
             </Link>
           </div>

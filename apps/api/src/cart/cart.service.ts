@@ -14,7 +14,7 @@ const CART_INCLUDE = {
     include: {
       // Marketplace Phase 16 — displayName only, so the cart can label
       // which seller each line ships from (customer-facing; the
-      // Tane-owned sellerId: null case already omits this at the
+      // Rebe-owned sellerId: null case already omits this at the
       // toPublicCartItem mapping layer).
       product: {
         include: {

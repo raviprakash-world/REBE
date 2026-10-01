@@ -104,7 +104,7 @@ export class AnalyticsController {
 
   /**
    * Marketplace Phase 14 — the marketplace-specific counterpart to
-   * getOverview above: real seller-vs-Tane GMV split, commission
+   * getOverview above: real seller-vs-Rebe GMV split, commission
    * collected, seller status counts, the top-seller ranking, and the
    * real "needs attention today" moderation/payout queue counts, all in
    * one call for the admin dashboard's marketplace landing view.

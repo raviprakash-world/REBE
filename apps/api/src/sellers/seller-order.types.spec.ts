@@ -54,7 +54,7 @@ describe('toPublicSellerOrderGroup', () => {
     expect(result.shippingAddress.phone).toBe('+911234567890');
   });
 
-  it("only ever includes items belonging to this group — never another seller's or Tane's lines in the same order", () => {
+  it("only ever includes items belonging to this group — never another seller's or Rebe's lines in the same order", () => {
     const result = toPublicSellerOrderGroup(
       rawGroup({
         items: [

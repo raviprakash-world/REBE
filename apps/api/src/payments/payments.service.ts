@@ -448,7 +448,7 @@ export class PaymentsService {
       });
 
       // Marketplace Phase 5 — group this order's items by seller (null =
-      // Tane-owned) into real OrderSellerGroup rows before creating the
+      // Rebe-owned) into real OrderSellerGroup rows before creating the
       // OrderItems themselves, so each item can be created already
       // pointing at its group in one createMany rather than a nested
       // create this grouping can't express. A single-seller-cart order
@@ -466,7 +466,7 @@ export class PaymentsService {
       // Marketplace Phase 8 — resolve each seller's commission rate once
       // per group (seller-specific override if one exists, else the
       // marketplace default) and freeze it onto every item in that group.
-      // Always 0 for the Tane-owned group (sellerId null): Tane does not
+      // Always 0 for the Rebe-owned group (sellerId null): Rebe does not
       // charge itself a commission — see SellerCommissionService and
       // OrderItem.commissionRatePercent's doc comments for why this is
       // resolved here, inside this same transaction, rather than computed
@@ -524,9 +524,9 @@ export class PaymentsService {
         // Marketplace Phase 9 — the seller's real, persisted ledger entry
         // for this order, written inside this same transaction (never a
         // separate step that could commit independently of the order
-        // itself existing). Skipped for the Tane-owned group (sellerId
+        // itself existing). Skipped for the Rebe-owned group (sellerId
         // null): SellerLedgerEntry.sellerId is required — there is no
-        // ledger for sales Tane makes to itself.
+        // ledger for sales Rebe makes to itself.
         if (sellerId !== null) {
           await this.ledgerService.recordOrderProceeds(
             tx,

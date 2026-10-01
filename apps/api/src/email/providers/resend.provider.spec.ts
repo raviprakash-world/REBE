@@ -15,7 +15,7 @@ describe('ResendProvider — fails loudly with no key configured', () => {
   function makeProvider(overrides: Record<string, unknown> = {}) {
     const config = {
       resendApiKey: undefined,
-      resendFromEmail: 'Tane <onboarding@resend.dev>',
+      resendFromEmail: 'Rebe <onboarding@resend.dev>',
       ...overrides,
     };
     return new ResendProvider(config as never);
@@ -46,7 +46,7 @@ describe('ResendProvider — sending with a configured key', () => {
   function makeConfiguredProvider() {
     return new ResendProvider({
       resendApiKey: 'test_key',
-      resendFromEmail: 'Tane <onboarding@resend.dev>',
+      resendFromEmail: 'Rebe <onboarding@resend.dev>',
     } as never);
   }
 
@@ -70,7 +70,7 @@ describe('ResendProvider — sending with a configured key', () => {
     });
 
     expect(send).toHaveBeenCalledWith({
-      from: 'Tane <onboarding@resend.dev>',
+      from: 'Rebe <onboarding@resend.dev>',
       to: 'customer@example.com',
       subject: 'Order confirmed',
       html: '<p>Hi</p>',

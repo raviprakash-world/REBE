@@ -1,12 +1,12 @@
 services:
   - type: keyvalue
-    name: tane-redis
+    name: rebe-redis
     plan: free
     ipAllowList: [] # only reachable over Render's private network
     maxmemoryPolicy: noeviction # don't drop BullMQ job data under memory pressure
 
   - type: web
-    name: tane-api
+    name: rebe-api
     runtime: docker
     dockerfilePath: apps/api/Dockerfile
     dockerContext: .
@@ -25,7 +25,7 @@ services:
         sync: false
       - key: REDIS_URL
         fromService:
-          name: tane-redis
+          name: rebe-redis
           type: keyvalue
           property: connectionString
       - key: JWT_ACCESS_SECRET

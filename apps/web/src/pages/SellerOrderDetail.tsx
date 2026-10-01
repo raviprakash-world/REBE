@@ -136,7 +136,7 @@ export default function SellerOrderDetail() {
 
       <div className="mb-10 max-w-md">
         <h2 className="font-display text-base font-semibold text-heading mb-3">Your private note</h2>
-        <p className="text-xs text-ink-soft mb-2">Only visible to you — never shown to the customer or Tane admin.</p>
+        <p className="text-xs text-ink-soft mb-2">Only visible to you — never shown to the customer or Rebe admin.</p>
         <textarea
           value={note}
           onChange={(e) => {

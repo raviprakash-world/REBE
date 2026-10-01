@@ -8,10 +8,13 @@ interface LogoProps {
 
 /**
  * Mark: two leaves splitting open from a common point, stem tapering below
- * into a root. Reads as the "T" of Tane (crossbar + stem) and as a seedling
- * breaking ground, without depending on either reading alone. One fill
- * color, no separate stroke details, so it holds up unbroken from the 16px
- * favicon to a hero mark.
+ * into a root - a seedling breaking ground. Carried over from the Tane
+ * identity, where the same shape doubled as a "T" letterform; that reading
+ * doesn't carry over to "Rebe" (wrong first letter), so this is now just
+ * the growth mark on its own merits. One fill color, no separate stroke
+ * details, so it holds up unbroken from the 16px favicon to a hero mark.
+ * TODO: if an "R" letterform integration is wanted, that's a real redesign
+ * pass, not a find-and-replace - flagged, not done here.
  */
 export function Logo({ className, tone = 'dark' }: LogoProps) {
   const color = tone === 'dark' ? 'var(--color-heading)' : 'var(--color-cream-light)';
@@ -25,7 +28,7 @@ export function Logo({ className, tone = 'dark' }: LogoProps) {
         <path d="M12 9.6C9.8 7.6 6.5 6.6 3.8 8.4C6.3 9.6 9.6 10.2 12 9.6Z" fill={color} />
         <path d="M12 9.6C14.2 7.6 17.5 6.6 20.2 8.4C17.7 9.6 14.4 10.2 12 9.6Z" fill={color} />
       </svg>
-      Tane
+      Rebe
     </span>
   );
 }

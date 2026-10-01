@@ -172,7 +172,7 @@ export default function ProductDetail() {
                 {product.seller.displayName}
               </Link>
             ) : (
-              <span className="font-medium text-ink">Tane</span>
+              <span className="font-medium text-ink">Rebe</span>
             )}
           </p>
 

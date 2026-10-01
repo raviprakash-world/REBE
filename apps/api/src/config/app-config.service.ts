@@ -77,7 +77,7 @@ export class AppConfigService {
   get resendFromEmail(): string {
     return this.configService.get<string>(
       'RESEND_FROM_EMAIL',
-      'Tane <onboarding@resend.dev>',
+      'Rebe <onboarding@resend.dev>',
     );
   }
 

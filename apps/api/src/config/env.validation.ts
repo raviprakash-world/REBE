@@ -119,7 +119,7 @@ class EnvironmentVariables {
   /** Resend's own shared sandbox address works with zero setup (no domain verification) but can only deliver to the Resend account's own verified email — real delivery to arbitrary customer inboxes needs a verified sending domain. See docs/API_INTEGRATION_STATUS.md. */
   @IsString()
   @IsOptional()
-  RESEND_FROM_EMAIL = 'Tane <onboarding@resend.dev>';
+  RESEND_FROM_EMAIL = 'Rebe <onboarding@resend.dev>';
 
   /** Absolute origin used to build links inside emails (reset-password, verify-email, order pages) — an email client has no notion of "relative to this site" the way an in-app link does. */
   @IsString()

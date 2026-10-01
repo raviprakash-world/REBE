@@ -10,10 +10,10 @@ import type { AuthenticatedUser } from '../users/user.types';
 
 /**
  * Marketplace Phase 3 — the admin seller-product moderation surface.
- * Deliberately separate from AdminProductsController (Tane's own
+ * Deliberately separate from AdminProductsController (Rebe's own
  * catalog CRUD, unchanged) — every method here is scoped to
  * ownerType: 'SELLER_OWNED' inside SellerProductsService, so this
- * endpoint can never touch a Tane-owned product.
+ * endpoint can never touch a Rebe-owned product.
  */
 @ApiTags('admin')
 @ApiBearerAuth()

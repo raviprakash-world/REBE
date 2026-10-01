@@ -1,5 +1,5 @@
 {
-  "name": "@tane/shared-types",
+  "name": "@rebe/shared-types",
   "version": "0.1.0",
   "private": true,
   "main": "src/index.ts",

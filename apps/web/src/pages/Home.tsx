@@ -4,7 +4,7 @@ import { NewArrivals } from '@/components/home/NewArrivals';
 import { ShopByNeed } from '@/components/home/ShopByNeed';
 import { BestSellers } from '@/components/home/BestSellers';
 import { Planters } from '@/components/home/Planters';
-import { WhyTane } from '@/components/home/WhyTane';
+import { WhyRebe } from '@/components/home/WhyRebe';
 import { ServicesSegment } from '@/components/home/ServicesSegment';
 import { BlogPreview } from '@/components/home/BlogPreview';
 
@@ -17,7 +17,7 @@ export default function Home() {
       <ShopByNeed />
       <BestSellers />
       <Planters />
-      <WhyTane />
+      <WhyRebe />
       <ServicesSegment />
       <BlogPreview />
     </>

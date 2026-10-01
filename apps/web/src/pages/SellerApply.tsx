@@ -93,7 +93,7 @@ export default function SellerApply() {
     <div className="max-w-lg mx-auto py-16">
       <PageHeader
         eyebrow="Become a seller"
-        title="Apply to sell on Tane"
+        title="Apply to sell on Rebe"
         description="Tell us about your storefront. An admin will review your application before you can list products."
       />
 
@@ -127,7 +127,7 @@ export default function SellerApply() {
         </div>
         <FormField label="GSTIN (optional)" error={errors.gstin?.message} {...register('gstin')} />
         <p className="text-xs text-ink-soft -mt-3">
-          Only if you're GST-registered. It's visible to Tane admins for verification, not shown to customers, and
+          Only if you're GST-registered. It's visible to Rebe admins for verification, not shown to customers, and
           providing it does not by itself make your sales GST-compliant.
         </p>
         <Button type="submit" variant="primary" size="lg" disabled={applyMutation.isPending} className="self-start">

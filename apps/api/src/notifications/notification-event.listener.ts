@@ -216,7 +216,7 @@ export class NotificationEventListener {
       type: 'SELLER',
       title: 'Seller Application Approved',
       message:
-        "You're approved to sell on Tane — your storefront is now live.",
+        "You're approved to sell on Rebe — your storefront is now live.",
       href: '/seller/profile',
     });
   }
