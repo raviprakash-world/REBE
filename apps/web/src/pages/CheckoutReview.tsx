@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ArrowLeft, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Alert } from '@/components/common/Alert';
@@ -31,6 +31,10 @@ export default function CheckoutReview() {
   const navigate = useNavigate();
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // No order can be placed without an explicit, recorded acceptance of
+  // the Terms & Conditions and Privacy Policy at the point of purchase
+  // — a page existing to visit isn't the same as a clickwrap acceptance.
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
   // Real gateway path only (Phase 2): checkout() for a gateway method
   // returns no order yet (see order.types.ts's CheckoutSnapshot) — only a
   // paymentId, which is what a "Retry payment" click keys off of.
@@ -291,14 +295,34 @@ export default function CheckoutReview() {
 
       <OrderSummary order={previewOrder} />
 
-      <div className="flex justify-between pt-6 mt-8 border-t border-stone-dark">
+      <label className="flex items-start gap-2.5 mt-8 text-sm text-ink-soft cursor-pointer">
+        <input
+          type="checkbox"
+          checked={agreedToTerms}
+          onChange={(e) => setAgreedToTerms(e.target.checked)}
+          className="mt-0.5 h-4 w-4 shrink-0 rounded border-stone-dark text-heading focus:ring-heading"
+        />
+        <span>
+          I agree to the{' '}
+          <Link to="/policies/terms" target="_blank" rel="noopener noreferrer" className="underline hover:text-heading">
+            Terms &amp; Conditions
+          </Link>{' '}
+          and{' '}
+          <Link to="/policies/privacy" target="_blank" rel="noopener noreferrer" className="underline hover:text-heading">
+            Privacy Policy
+          </Link>
+          .
+        </span>
+      </label>
+
+      <div className="flex justify-between pt-6 mt-4 border-t border-stone-dark">
         <Button variant="ghost" icon={<ArrowLeft size={15} />} onClick={() => void navigate('/checkout/payment')}>
           Back
         </Button>
         <Button
           variant="primary"
           size="lg"
-          disabled={placing}
+          disabled={placing || !agreedToTerms}
           icon={placing ? <Loader2 size={16} className="animate-spin" /> : undefined}
           onClick={() => void (pendingPaymentId ? handleRetryPayment() : handlePlaceOrder())}
         >

@@ -22,7 +22,7 @@ export const policies: Policy[] = [
     sections: [
       {
         heading: 'Processing time',
-        body: 'Orders ship within 1–2 business days of being placed. You\u2019ll get a shipping confirmation as soon as your order leaves our partner nursery or warehouse.',
+        body: 'Orders ship within 1–2 business days of being placed. You’ll get a shipping confirmation as soon as your order leaves our partner nursery or warehouse.',
       },
       {
         heading: 'Delivery estimates',
@@ -45,7 +45,7 @@ export const policies: Policy[] = [
     sections: [
       {
         heading: 'Plants',
-        body: 'Live plants are final sale once delivered, since they can\u2019t be resold. They\u2019re covered separately by our 30-day health guarantee: if a plant arrives unwell or dies within 30 days despite following the included care card, we replace it once at no charge.',
+        body: 'Live plants are final sale once delivered, since they can’t be resold. They’re covered separately by our 30-day health guarantee: if a plant arrives unwell or dies within 30 days despite following the included care card, we replace it once at no charge.',
       },
       {
         heading: 'Vessels & tools',
@@ -57,57 +57,101 @@ export const policies: Policy[] = [
       },
       {
         heading: 'Damaged on arrival',
-        body: 'If anything arrives damaged, photograph it within 48 hours and reach out through Contact — we\u2019ll sort out a replacement or refund without asking you to ship it back first.',
+        body: 'If anything arrives damaged, photograph it within 48 hours and reach out through Contact — we’ll sort out a replacement or refund without asking you to ship it back first.',
       },
     ],
   },
   {
     slug: 'privacy',
     title: 'Privacy Policy',
-    updatedAt: '2026-06-15',
+    updatedAt: '2026-10-01',
     sections: [
       {
         heading: 'What we collect',
-        body: 'Name, email, shipping address, and order history when you place an order or create an account. If you contact us, we keep the message and your reply details to resolve the request.',
+        body: 'Name, email, phone number, shipping address, and order history when you place an order or create an account. If you contact us, we keep the message and our reply to resolve the request. We do not collect or store your card, UPI, or bank details — those are entered directly into our payment processor’s secure form and never touch our servers.',
       },
       {
-        heading: 'What we don\u2019t do',
-        body: 'We don\u2019t sell your personal information to third parties, and we don\u2019t share it beyond what\u2019s needed to fulfill and ship an order (payment processing, carrier handoff).',
+        heading: 'How we use your data',
+        body: 'To process and ship your order, send order and delivery updates, respond to support requests, and prevent fraud. We don’t use your data for anything beyond running the store and the purposes listed on this page.',
+      },
+      {
+        heading: 'Who we share it with',
+        body: 'We share only what’s needed to fulfil an order: your payment details with our payment processor (Razorpay) to complete the transaction, your name, address and phone with our shipping/courier partners to deliver it, and order details with transactional email/SMS providers to send you updates. We don’t sell your personal information, and we don’t share it for third-party advertising.',
       },
       {
         heading: 'Cookies',
-        body: 'We use functional cookies for cart persistence and session state — nothing for third-party ad tracking.',
+        body: 'We use functional cookies for cart persistence and session state only — no third-party ad-tracking cookies.',
+      },
+      {
+        heading: 'Data retention',
+        body: 'We keep order records for as long as needed to meet tax, accounting and consumer-dispute requirements under Indian law, and account data until you ask us to delete it.',
       },
       {
         heading: 'Your rights',
-        body: 'You can request a copy of your data or ask us to delete your account at any time through Contact.',
+        body: 'Under India’s Digital Personal Data Protection Act, 2023, you can ask us to let you access, correct, or erase your personal data, and you can withdraw consent for optional processing at any time. Send requests to the contact below; we’ll acknowledge within 48 hours and resolve within 30 days.',
       },
       {
-        heading: 'About this page',
-        body: 'This is a portfolio project, not a real store — this policy is illustrative content, not a binding legal document.',
+        heading: 'Grievance Officer',
+        body: '[Name] · [email] · [phone] · [registered address] — to be completed before this policy is relied on for live orders. Required under the IT Rules, 2021 and the Consumer Protection (E-Commerce) Rules, 2020.',
+      },
+      {
+        heading: 'Governing law',
+        body: 'This policy is governed by the laws of India. Disputes are subject to the exclusive jurisdiction of the courts at [city, to be filled in once the business is registered].',
+      },
+      {
+        heading: 'Draft status',
+        body: 'This policy is a working draft prepared to cover the points Indian e-commerce law requires (DPDPA 2023, IT Rules 2021, Consumer Protection (E-Commerce) Rules 2020). The bracketed fields need the registered business’s real details, and the whole page should be reviewed by a licensed attorney before this site takes live orders or payments.',
       },
     ],
   },
   {
     slug: 'terms',
     title: 'Terms & Conditions',
-    updatedAt: '2026-06-15',
+    updatedAt: '2026-10-01',
     sections: [
+      {
+        heading: 'Who we are',
+        body: '[Business legal name], a [entity type — sole proprietorship / LLP / private limited, to be filled in once registered], operating this site from India. Registered address and business registration number will be added here once formal registration is complete.',
+      },
       {
         heading: 'Using this site',
         body: 'By using this site you agree to provide accurate information when placing an order or creating an account, and not to misuse the site (attempting to disrupt service, scraping at scale, etc.).',
       },
       {
         heading: 'Pricing & availability',
-        body: 'Prices and stock levels are shown in real time but aren\u2019t guaranteed until an order is confirmed — an item can occasionally sell out between browsing and checkout.',
+        body: 'Prices and stock levels are shown in real time but aren’t guaranteed until an order is confirmed — an item can occasionally sell out between browsing and checkout. All prices are in INR and inclusive of applicable GST unless stated otherwise.',
+      },
+      {
+        heading: 'Orders & payments',
+        body: 'Placing an order is an offer to buy, which we accept by confirming it. Payments are processed by Razorpay; we never see or store your full card, UPI, or bank details. We may cancel and refund an order we reasonably believe is fraudulent or placed in error (e.g. a pricing mistake), and will notify you if we do.',
+      },
+      {
+        heading: 'Cancellations, returns & refunds',
+        body: 'See our Shipping and Return policies for timelines and conditions. Refunds are issued to the original payment method once a cancellation or return is approved.',
       },
       {
         heading: 'Accounts',
-        body: 'You\u2019re responsible for keeping your account credentials secure. You need an account to place an order, so we can show your order history and let you track deliveries.',
+        body: 'You’re responsible for keeping your account credentials secure. You need an account to place an order, so we can show your order history and let you track deliveries.',
       },
       {
-        heading: 'About this page',
-        body: 'This is a portfolio project, not a real store — these terms are illustrative content, not a binding legal document.',
+        heading: 'Limitation of liability',
+        body: 'To the extent permitted by Indian law, our liability for any claim relating to an order is limited to the amount you paid for that order. We’re not liable for indirect or consequential losses.',
+      },
+      {
+        heading: 'Grievance redressal',
+        body: 'Complaints about an order or this site can be sent to our Grievance Officer: [Name] · [email] · [phone]. We’ll acknowledge within 48 hours and aim to resolve within 30 days, as required under the Consumer Protection (E-Commerce) Rules, 2020.',
+      },
+      {
+        heading: 'Governing law',
+        body: 'These terms are governed by the laws of India. Disputes are subject to the exclusive jurisdiction of the courts at [city, to be filled in once the business is registered].',
+      },
+      {
+        heading: 'Changes to these terms',
+        body: 'We may update these terms as the business grows; the “last updated” date above reflects the latest version. Continued use of the site after an update means you accept the revised terms.',
+      },
+      {
+        heading: 'Draft status',
+        body: 'This is a working draft prepared to cover the points Indian consumer and e-commerce law typically requires. The bracketed fields need the registered business’s real details, and the whole page should be reviewed by a licensed attorney before this site takes live orders or payments.',
       },
     ],
   },
