@@ -192,7 +192,7 @@ export async function downloadInvoice(order: Order): Promise<void> {
   doc.setFontSize(8);
   doc.setTextColor(...INK_SOFT);
   doc.text(
-    `Questions about this order? ${COMPANY.email}  ·  ${COMPANY.phone}  ·  This is a portfolio project — not a real business.`,
+    `Questions about this order? ${COMPANY.email}  ·  ${COMPANY.phone}`,
     pageWidth / 2,
     footerY,
     { align: 'center' }

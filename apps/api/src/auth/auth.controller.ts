@@ -72,7 +72,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 }, upstream: { limit: 60, ttl: 60_000 } })
   @Post('register')
   @ApiOperation({
     summary:
@@ -96,7 +96,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 }, upstream: { limit: 60, ttl: 60_000 } })
   @Post('login')
   @ApiOperation({
     summary:
@@ -220,7 +220,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { limit: 3, ttl: 60_000 } })
+  @Throttle({ default: { limit: 3, ttl: 60_000 }, upstream: { limit: 60, ttl: 60_000 } })
   @Post('forgot-password')
   @ApiOperation({
     summary:
@@ -234,7 +234,7 @@ export class AuthController {
   }
 
   @Public()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 }, upstream: { limit: 60, ttl: 60_000 } })
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   async resetPassword(@Body() dto: ResetPasswordDto): Promise<{ ok: true }> {

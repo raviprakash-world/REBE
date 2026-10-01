@@ -1,6 +1,8 @@
 import { Module } from '@nestjs/common';
 import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import type { Request } from 'express';
+import { clientIp, upstreamIp } from './common/throttle-trackers';
 import { ThrottlerStorageRedisService } from '@nest-lab/throttler-storage-redis';
 import { EventEmitterModule } from '@nestjs/event-emitter';
 import { LoggerModule } from 'nestjs-pino';
@@ -95,7 +97,12 @@ import { SellerGuard } from './sellers/guards/seller.guard';
       imports: [AppConfigModule],
       inject: [AppConfigService],
       useFactory: (config: AppConfigService) => ({
-        throttlers: [{ ttl: 60_000, limit: 100 }], // generous global default; sensitive auth endpoints set their own tighter @Throttle()
+        // See common/throttle-trackers.ts for why there are two. Routes that
+        // tighten `default` via @Throttle() also tighten `upstream`.
+        throttlers: [
+          { name: 'default', ttl: 60_000, limit: 100, getTracker: (req) => clientIp(req as Request) },
+          { name: 'upstream', ttl: 60_000, limit: 2000, getTracker: (req) => upstreamIp(req as Request) },
+        ],
         // P0-G — found by deliberately taking Redis down during the
         // production-readiness rehearsal: ioredis's own defaults
         // (maxRetriesPerRequest: 20, each retry potentially waiting up

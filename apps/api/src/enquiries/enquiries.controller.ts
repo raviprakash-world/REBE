@@ -13,7 +13,7 @@ export class EnquiriesController {
   constructor(private readonly enquiriesService: EnquiriesService) {}
 
   @Public()
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: 5, ttl: 60_000 }, upstream: { limit: 60, ttl: 60_000 } })
   @Post('enquiries')
   create(@Body() dto: CreateEnquiryDto) {
     return this.enquiriesService.create(dto);

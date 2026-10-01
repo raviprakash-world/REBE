@@ -113,7 +113,7 @@ export class OrdersController {
    * that's the admin-resolution phase (Phase 6D-4+).
    */
   @Post('orders/:id/returns')
-  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Throttle({ default: { limit: 10, ttl: 60_000 }, upstream: { limit: 200, ttl: 60_000 } })
   @UseInterceptors(
     FilesInterceptor('evidence', MAX_EVIDENCE_FILES, {
       limits: { fileSize: MAX_EVIDENCE_FILE_BYTES },

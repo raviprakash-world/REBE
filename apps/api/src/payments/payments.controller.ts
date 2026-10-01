@@ -102,7 +102,7 @@ export class PaymentsController {
    * authenticity already comes from its signature, not its request rate.
    */
   @Public()
-  @SkipThrottle()
+  @SkipThrottle({ default: true, upstream: true })
   @Post('webhook')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
