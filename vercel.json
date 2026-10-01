@@ -1,10 +1,10 @@
 {
-  "buildCommand": "npx turbo run build --filter=folia",
+  "buildCommand": "npx turbo run build --filter=rebe",
   "outputDirectory": "apps/web/dist",
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://folia-api.onrender.com/api/v1/:path*"
+      "destination": "https://rebe-api.onrender.com/api/v1/:path*"
     },
     {
       "source": "/(.*)",
