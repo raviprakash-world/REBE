@@ -4,7 +4,7 @@ export interface RenderedEmail {
   text: string;
 }
 
-const FERN = '#4b7259'; // Rebe's real --color-fern (apps/web/src/index.css) — same color already used in the Razorpay checkout modal, kept consistent here.
+const FERN = '#4b7259'; // Rebekart's real --color-fern (apps/web/src/index.css) — same color already used in the Razorpay checkout modal, kept consistent here.
 const INK_SOFT = '#6b6b63';
 
 /**
@@ -32,7 +32,7 @@ function renderLayout(input: {
         <td align="center">
           <table role="presentation" width="480" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;padding:32px;">
             <tr>
-              <td style="font-family:sans-serif;color:#2a2a26;font-size:20px;font-weight:700;padding-bottom:16px;">Rebe</td>
+              <td style="font-family:sans-serif;color:#2a2a26;font-size:20px;font-weight:700;padding-bottom:16px;">Rebekart</td>
             </tr>
             <tr>
               <td style="font-family:sans-serif;color:#2a2a26;font-size:18px;font-weight:600;padding-bottom:12px;">${input.heading}</td>
@@ -51,29 +51,29 @@ function renderLayout(input: {
 
 export function passwordResetEmail(resetUrl: string): RenderedEmail {
   return {
-    subject: 'Reset your Rebe password',
+    subject: 'Reset your Rebekart password',
     html: renderLayout({
       heading: 'Reset your password',
       bodyHtml:
-        "We received a request to reset your Rebe password. This link expires in 30 minutes. If you didn't request this, you can safely ignore this email — your password will not be changed.",
+        "We received a request to reset your Rebekart password. This link expires in 30 minutes. If you didn't request this, you can safely ignore this email — your password will not be changed.",
       ctaLabel: 'Reset password',
       ctaUrl: resetUrl,
     }),
-    text: `Reset your Rebe password\n\nWe received a request to reset your Rebe password. This link expires in 30 minutes. If you didn't request this, you can safely ignore this email.\n\n${resetUrl}`,
+    text: `Reset your Rebekart password\n\nWe received a request to reset your Rebekart password. This link expires in 30 minutes. If you didn't request this, you can safely ignore this email.\n\n${resetUrl}`,
   };
 }
 
 export function emailVerificationEmail(verifyUrl: string): RenderedEmail {
   return {
-    subject: 'Verify your email for Rebe',
+    subject: 'Verify your email for Rebekart',
     html: renderLayout({
       heading: 'Verify your email',
       bodyHtml:
-        'Confirm this is your email address to finish setting up your Rebe account.',
+        'Confirm this is your email address to finish setting up your Rebekart account.',
       ctaLabel: 'Verify email',
       ctaUrl: verifyUrl,
     }),
-    text: `Verify your email\n\nConfirm this is your email address to finish setting up your Rebe account.\n\n${verifyUrl}`,
+    text: `Verify your email\n\nConfirm this is your email address to finish setting up your Rebekart account.\n\n${verifyUrl}`,
   };
 }
 
@@ -210,11 +210,11 @@ export function storeCreditIssuedEmail(
     subject: `Store credit issued for order ${orderId}`,
     html: renderLayout({
       heading: 'Store credit issued',
-      bodyHtml: `${formatted} in Rebe store credit has been issued for your return on order <strong>${orderId}</strong>.`,
+      bodyHtml: `${formatted} in Rebekart store credit has been issued for your return on order <strong>${orderId}</strong>.`,
       ctaLabel: 'View order',
       ctaUrl: orderUrl,
     }),
-    text: `Store credit issued\n\n${formatted} in Rebe store credit has been issued for your return on order ${orderId}.\n\n${orderUrl}`,
+    text: `Store credit issued\n\n${formatted} in Rebekart store credit has been issued for your return on order ${orderId}.\n\n${orderUrl}`,
   };
 }
 

@@ -11,7 +11,7 @@ export const paymentMethodDefs: PaymentMethodDef[] = [
   { id: 'debit-card', label: 'Debit Card', description: 'Visa, Mastercard' },
   { id: 'upi', label: 'UPI', description: 'Pay via any UPI app' },
   { id: 'net-banking', label: 'Net Banking', description: 'Pay directly from your bank' },
-  { id: 'wallet', label: 'Wallet', description: 'Use your Rebe wallet balance' },
+  { id: 'wallet', label: 'Wallet', description: 'Use your Rebekart wallet balance' },
   { id: 'cod', label: 'Cash on Delivery', description: 'Pay when your order arrives' },
 ];
 

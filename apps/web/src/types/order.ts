@@ -85,7 +85,7 @@ export interface PaymentSummary {
   transactionId: string;
 }
 
-/** Marketplace Phase 16 — one seller's own portion of a real, multi-seller order (OrderSellerGroup). `sellerName: null` is Rebe's own shipment, not an unknown seller. */
+/** Marketplace Phase 16 — one seller's own portion of a real, multi-seller order (OrderSellerGroup). `sellerName: null` is Rebekart's own shipment, not an unknown seller. */
 export interface OrderShipmentGroup {
   id: string;
   sellerName: string | null;

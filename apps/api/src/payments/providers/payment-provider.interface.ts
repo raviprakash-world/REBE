@@ -13,7 +13,7 @@ export interface CreateGatewayOrderInput {
   /** Major currency units (e.g. rupees), matching this codebase's existing Decimal(10,2) convention elsewhere — the provider implementation is responsible for converting to whatever minor-unit format its API requires. */
   amount: number;
   currency: string;
-  /** Our own order id — passed through as the gateway's "receipt" field so a support agent can correlate a Razorpay dashboard entry back to a Rebe order without a database lookup. */
+  /** Our own order id — passed through as the gateway's "receipt" field so a support agent can correlate a Razorpay dashboard entry back to a Rebekart order without a database lookup. */
   receipt: string;
 }
 

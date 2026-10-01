@@ -996,7 +996,7 @@ function makeAdminRow(overrides: Record<string, unknown> = {}) {
           name: 'Ceramic Vessel — Ash',
           price: 42,
           quantity: 2,
-          // Marketplace Phase 20 — Rebe-owned by default (sellerId
+          // Marketplace Phase 20 — Rebekart-owned by default (sellerId
           // null); tests that care about seller attribution override
           // this directly (see makeSellerItem).
           orderSellerGroup: { sellerId: null, seller: null },
@@ -1168,7 +1168,7 @@ describe('ReturnsService.adminGetClaim', () => {
     );
   });
 
-  it('Marketplace Phase 20 — surfaces which seller a claimed line belongs to, null for a Rebe-owned line', async () => {
+  it('Marketplace Phase 20 — surfaces which seller a claimed line belongs to, null for a Rebekart-owned line', async () => {
     const { prisma, service } = createDeps();
     prisma.returnRequest.findUnique.mockResolvedValue(
       makeAdminRow({
@@ -1722,7 +1722,7 @@ function makeResolutionRow(overrides: Record<string, unknown> = {}) {
           // same seller attribution as the line being replaced.
           orderSellerGroup: { sellerId: null },
           // Marketplace Phase 11 — the commission frozen at sale time;
-          // 0 here matches a Rebe-owned line's real default.
+          // 0 here matches a Rebekart-owned line's real default.
           commissionAmount: 0,
         },
       },
@@ -2443,7 +2443,7 @@ describe('ReturnsService — Marketplace Phase 11 seller ledger clawback', () =>
     );
   });
 
-  it('never touches the seller ledger for a Rebe-owned line (sellerId null)', async () => {
+  it('never touches the seller ledger for a Rebekart-owned line (sellerId null)', async () => {
     const { prisma, paymentsService, sellerLedgerService, service } =
       createDeps();
     prisma.returnRequest.findUnique

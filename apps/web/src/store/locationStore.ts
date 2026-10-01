@@ -24,7 +24,7 @@ interface LocationState {
 
 /**
  * The visitor's chosen delivery location, kept on their device only (PIN +
- * city + state — never coordinates). Nothing here is sent to Rebe's
+ * city + state — never coordinates). Nothing here is sent to Rebekart's
  * servers; it just tailors what the storefront shows.
  */
 export const useLocationStore = create<LocationState>()(

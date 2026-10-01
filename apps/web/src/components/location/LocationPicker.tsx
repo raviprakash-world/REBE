@@ -188,7 +188,7 @@ function LocationDialog() {
 
         <p className="text-xs text-ink-soft">
           Your PIN code, city and state are saved on this device only. “Use my current location” sends your coordinates
-          once to OpenStreetMap to find the address — nothing is sent to Rebe.
+          once to OpenStreetMap to find the address — nothing is sent to Rebekart.
         </p>
 
         {location && (

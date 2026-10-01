@@ -3,7 +3,7 @@ import type {
   DeliveryMethodType,
 } from '../orders/order.types';
 
-/** The one order-line shape a seller ever sees — no other seller's or Rebe's items in the same order are ever included, since this is built from OrderSellerGroup.items (the FK-scoped relation), never Order.items directly. */
+/** The one order-line shape a seller ever sees — no other seller's or Rebekart's items in the same order are ever included, since this is built from OrderSellerGroup.items (the FK-scoped relation), never Order.items directly. */
 export interface PublicSellerOrderItem {
   id: string;
   productId: string;

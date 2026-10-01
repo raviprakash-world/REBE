@@ -22,13 +22,13 @@ export default function About() {
     <>
       <div className="bg-pine text-cream-light">
         <Container className="py-12 sm:py-24">
-          <p className="font-mono text-xs uppercase tracking-wider text-ochre mb-4">About Rebe</p>
+          <p className="font-mono text-xs uppercase tracking-wider text-ochre mb-4">About Rebekart</p>
           <h1 className="font-display text-4xl md:text-5xl font-semibold max-w-[20ch] leading-tight">
             We think a plant should still be alive a year after you buy it.
           </h1>
           <p className="text-cream/75 mt-5 max-w-[60ch] text-lg">
             That sounds obvious. It isn't how most plant shops operate — optimized for the
-            unboxing photo, not the following spring. We built Rebe around the opposite bet.
+            unboxing photo, not the following spring. We built Rebekart around the opposite bet.
           </p>
         </Container>
       </div>

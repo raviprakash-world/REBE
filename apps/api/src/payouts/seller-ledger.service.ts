@@ -32,7 +32,7 @@ export class SellerLedgerService {
   ) {}
 
   /**
-   * Writes SALE (the group's gross subtotal) + COMMISSION (Rebe's cut,
+   * Writes SALE (the group's gross subtotal) + COMMISSION (Rebekart's cut,
    * negative) for one seller's OrderSellerGroup — the seller's net proceeds
    * from this order are exactly SALE.amount + COMMISSION.amount. Called
    * from inside PaymentsService.confirmAndCreateOrder's own transaction, so

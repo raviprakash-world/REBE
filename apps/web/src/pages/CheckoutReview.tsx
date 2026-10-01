@@ -175,7 +175,7 @@ export default function CheckoutReview() {
     setPendingPaymentId(paymentId);
     setPendingGateway({ paymentId, gateway });
     try {
-      const verifyInput = await openRazorpayCheckout(gateway, 'Your Rebe order', (reason) =>
+      const verifyInput = await openRazorpayCheckout(gateway, 'Your Rebekart order', (reason) =>
         setError(`Payment failed: ${reason} You can try another method in the payment window.`)
       );
       const { order } = await verifyPayment(paymentId, verifyInput);

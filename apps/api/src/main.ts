@@ -106,8 +106,8 @@ async function bootstrap() {
   app.enableShutdownHooks();
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('Rebe API')
-    .setDescription('Rebe e-commerce backend — REST API')
+    .setTitle('Rebekart API')
+    .setDescription('Rebekart e-commerce backend — REST API')
     .setVersion('1.0')
     .addBearerAuth()
     .build();

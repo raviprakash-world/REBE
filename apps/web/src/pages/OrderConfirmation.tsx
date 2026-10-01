@@ -89,7 +89,7 @@ export default function OrderConfirmation() {
         <Button variant="outline" icon={<Package size={14} />} onClick={() => void downloadInvoice(order)}>
           Download invoice
         </Button>
-        <ShareButtons title={`My Rebe order ${order.id}`} url={typeof window !== 'undefined' ? window.location.href : ''} />
+        <ShareButtons title={`My Rebekart order ${order.id}`} url={typeof window !== 'undefined' ? window.location.href : ''} />
       </div>
 
       <div className="rounded-[var(--radius-card)] bg-stone-light border border-stone-dark p-6">

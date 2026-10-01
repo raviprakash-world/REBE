@@ -54,7 +54,7 @@ export interface ReturnClaimLineDetail {
   unitPrice: number;
   purchasedQuantity: number;
   claimedLineValue: number;
-  /** Marketplace Phase 20 — null for a Rebe-owned line. */
+  /** Marketplace Phase 20 — null for a Rebekart-owned line. */
   sellerId: string | null;
   sellerName: string | null;
 }

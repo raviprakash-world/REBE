@@ -21,7 +21,7 @@ function makeCartItem(overrides: Record<string, unknown> = {}) {
       name: 'Monstera',
       category: { slug: 'plants' },
       // Marketplace Phase 5 — every existing test's cart item is a real,
-      // purchasable Rebe-owned product by default; tests that need an
+      // purchasable Rebekart-owned product by default; tests that need an
       // unapproved/seller-owned line override these explicitly.
       approvalStatus: 'ACTIVE',
       sellerId: null,
@@ -144,12 +144,12 @@ function createDeps() {
     orderItem: { findMany: jest.fn() },
     // Marketplace Phase 5 — checkout's own defense-in-depth seller-status
     // re-check. Only ever queried when the cart has at least one
-    // SELLER_OWNED line, which the default single Rebe cart item never
+    // SELLER_OWNED line, which the default single Rebekart cart item never
     // triggers — most existing tests never need this mocked at all.
     seller: { findMany: jest.fn().mockResolvedValue([]) },
     // Marketplace Phase 12 — shipOrder/adminUpdateStatus's own
     // per-seller-group delegation. Defaults to the trivial single-group
-    // case (a bare Rebe-only order), matching every existing test's own
+    // case (a bare Rebekart-only order), matching every existing test's own
     // assumption before this phase; tests that care about the real
     // multi-group refusal path override these directly.
     orderSellerGroup: {
@@ -383,7 +383,7 @@ describe('OrdersService.checkout', () => {
       expect(inventoryService.reserveForProduct).not.toHaveBeenCalled();
     });
 
-    it('never queries sellers at all for an all-Rebe cart', async () => {
+    it('never queries sellers at all for an all-Rebekart cart', async () => {
       const { prisma, service } = createDeps();
 
       await service.checkout('user-1', BASE_DTO);
@@ -1481,7 +1481,7 @@ describe('OrdersService.shipOrderSellerGroup', () => {
     );
   });
 
-  it("omits the sellerId filter for an admin call (no sellerId argument) — can ship any group, including Rebe's own", async () => {
+  it("omits the sellerId filter for an admin call (no sellerId argument) — can ship any group, including Rebekart's own", async () => {
     const { prisma, service } = createDeps();
     prisma.orderSellerGroup.findFirst.mockResolvedValue(
       makeGroupRow({ sellerId: null }),

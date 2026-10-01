@@ -72,7 +72,7 @@ export class ProductQueryDto {
 
   @ApiPropertyOptional({
     description:
-      "Marketplace Phase 4 — filter to one seller's storefront. Never combined with a Rebe-owned-only view; a seller product only ever appears here once ACTIVE, same as every other product.",
+      "Marketplace Phase 4 — filter to one seller's storefront. Never combined with a Rebekart-owned-only view; a seller product only ever appears here once ACTIVE, same as every other product.",
   })
   @IsOptional()
   @IsString()
@@ -80,7 +80,7 @@ export class ProductQueryDto {
 
   @ApiPropertyOptional({
     description:
-      "Only products that ship from this Indian state (a seller product: the seller's business-address state; a Rebe-owned product: Rebe's Bengaluru dispatch state). Case-insensitive.",
+      "Only products that ship from this Indian state (a seller product: the seller's business-address state; a Rebekart-owned product: Rebekart's Bengaluru dispatch state). Case-insensitive.",
   })
   @IsOptional()
   @IsString()

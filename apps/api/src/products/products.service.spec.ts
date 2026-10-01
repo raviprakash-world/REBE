@@ -174,7 +174,7 @@ describe('ProductsService.findMany', () => {
     );
   });
 
-  it("shipFromState: matches sellers whose business address is in that state (case-insensitive) and, for Rebe's own dispatch state, Rebe-owned products too", async () => {
+  it("shipFromState: matches sellers whose business address is in that state (case-insensitive) and, for Rebekart's own dispatch state, Rebekart-owned products too", async () => {
     const prisma = createMockPrisma();
     prisma.$transaction.mockResolvedValue([0, []]);
     const service = new ProductsService(prisma as never);
@@ -209,7 +209,7 @@ describe('ProductsService.findMany', () => {
     const maharashtraWhere = (
       prisma.product.count.mock.calls[0] as [{ where: { OR: unknown[] } }]
     )[0].where;
-    expect(maharashtraWhere.OR).toHaveLength(1); // no Rebe-owned products dispatch from Maharashtra
+    expect(maharashtraWhere.OR).toHaveLength(1); // no Rebekart-owned products dispatch from Maharashtra
   });
 
   it('Marketplace Phase 3: excludes non-ACTIVE products (a seller draft/submission never appears in the public marketplace)', async () => {

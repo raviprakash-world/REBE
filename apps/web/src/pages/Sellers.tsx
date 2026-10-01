@@ -53,7 +53,7 @@ export default function Sellers() {
 
   return (
     <Container className="py-12">
-      <PageHeader title="Sellers" description="Independent makers and shops selling on Rebe." />
+      <PageHeader title="Sellers" description="Independent makers and shops selling on Rebekart." />
 
       <div className="relative mb-6 max-w-sm sm:mb-8">
         <Search size={16} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-ink-soft" />

@@ -5,16 +5,16 @@ export interface CartGroup {
   items: CartItem[];
 }
 
-/** Marketplace carts: one block per seller, Rebe's own catalog first, then sellers in the order they were added. */
+/** Marketplace carts: one block per seller, Rebekart's own catalog first, then sellers in the order they were added. */
 export function groupBySeller(items: CartItem[]): CartGroup[] {
   const groups = new Map<string, CartItem[]>();
   for (const item of items) {
-    const seller = item.sellerName?.trim() || 'Rebe';
+    const seller = item.sellerName?.trim() || 'Rebekart';
     groups.set(seller, [...(groups.get(seller) ?? []), item]);
   }
   return [...groups.entries()]
     .map(([seller, list]) => ({ seller, items: list }))
-    .sort((a, b) => Number(b.seller === 'Rebe') - Number(a.seller === 'Rebe'));
+    .sort((a, b) => Number(b.seller === 'Rebekart') - Number(a.seller === 'Rebekart'));
 }
 
 /** What the shopper saves against the original prices, for lines that recorded one. */

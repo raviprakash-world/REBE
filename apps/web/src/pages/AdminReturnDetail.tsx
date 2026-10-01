@@ -139,7 +139,7 @@ export default function AdminReturnDetail() {
               {claim.items.map((item) => (
                 <tr key={item.orderItemId} className="border-b border-stone-dark/60 last:border-0">
                   <td className="py-2.5 px-3 text-ink">{item.productName}</td>
-                  <td className="py-2.5 px-3 text-ink-soft">{item.sellerName ?? 'Rebe'}</td>
+                  <td className="py-2.5 px-3 text-ink-soft">{item.sellerName ?? 'Rebekart'}</td>
                   <td className="py-2.5 px-3 text-right font-mono">{formatCurrency(item.unitPrice)}</td>
                   <td className="py-2.5 px-3 text-right font-mono">{item.quantity} / {item.purchasedQuantity}</td>
                   <td className="py-2.5 px-3 text-right font-mono">{formatCurrency(item.claimedLineValue)}</td>

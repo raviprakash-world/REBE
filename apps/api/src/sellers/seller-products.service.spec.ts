@@ -469,7 +469,7 @@ describe('SellerProductsService admin transitions', () => {
     expect(args.data.approvalStatus).toBe('ARCHIVED');
   });
 
-  it('adminGetDetail: 404s for a product that exists but is Rebe-owned, not seller-owned — the two admin surfaces stay separate', async () => {
+  it('adminGetDetail: 404s for a product that exists but is Rebekart-owned, not seller-owned — the two admin surfaces stay separate', async () => {
     const { prisma, service } = createDeps();
     prisma.product.findFirst.mockResolvedValue(null);
 

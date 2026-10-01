@@ -81,7 +81,7 @@ export default function SellerLogin() {
       </form>
 
       <p className="text-sm text-ink-soft mt-6 text-center">
-        Want to sell on Rebe?{' '}
+        Want to sell on Rebekart?{' '}
         <Link to="/seller/apply" className="text-fern hover:text-heading transition-colors">
           Apply to become a seller
         </Link>

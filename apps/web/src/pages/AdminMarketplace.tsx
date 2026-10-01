@@ -42,7 +42,7 @@ export default function AdminMarketplace() {
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-10">
         <StatCard label="Seller GMV" value={formatCurrency(data.gmv.sellerGmv)} Icon={IndianRupee} />
-        <StatCard label="Rebe GMV" value={formatCurrency(data.gmv.foliaGmv)} Icon={TrendingUp} />
+        <StatCard label="Rebekart GMV" value={formatCurrency(data.gmv.foliaGmv)} Icon={TrendingUp} />
         <StatCard label="Commission collected" value={formatCurrency(data.gmv.commissionCollected)} Icon={Percent} />
         <StatCard label="Active sellers" value={data.sellers.byStatus.ACTIVE ?? 0} Icon={Users} />
       </div>

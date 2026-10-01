@@ -66,7 +66,7 @@ const ADMIN_RETURN_INCLUDE = {
           price: true,
           quantity: true,
           // Marketplace Phase 20 — which seller this line belongs to
-          // (null = Rebe's own), so a claim against a multi-seller
+          // (null = Rebekart's own), so a claim against a multi-seller
           // order shows an admin which seller's item is actually being
           // returned/refunded. The refund itself was already correctly
           // attributed per-seller (see recordSellerRefundEntries below)
@@ -1491,7 +1491,7 @@ export class ReturnsService {
    * REFUND or FOLIA_STORE_CREDIT resolution. Never called for REPLACEMENT
    * — no money moves there, the seller keeps their original proceeds and
    * simply ships another unit. Skips any line whose orderSellerGroup has
-   * no sellerId (Rebe-owned) — there is no seller ledger to touch.
+   * no sellerId (Rebekart-owned) — there is no seller ledger to touch.
    * Sums every claimed line a given seller owns into ONE entry, matching
    * SALE/COMMISSION's own "one entry per real triggering event per
    * seller" shape rather than one per line.

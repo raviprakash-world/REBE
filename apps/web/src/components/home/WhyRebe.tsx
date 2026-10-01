@@ -34,7 +34,7 @@ const points = [
 export function WhyRebe() {
   return (
     <Container className="py-8 sm:py-12">
-      <SectionHeading title="Why shop with Rebe" />
+      <SectionHeading title="Why shop with Rebekart" />
       <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {points.map(({ Icon, title, text, to }) => (
           <li key={title}>

@@ -342,7 +342,7 @@ export interface CheckoutSnapshotItem {
   inventoryItemId: string;
   reservationId: string;
   /** Marketplace Phase 5 — which seller owns this line's product (null =
-   * Rebe-owned), captured at checkout time so confirmAndCreateOrder can
+   * Rebekart-owned), captured at checkout time so confirmAndCreateOrder can
    * group items into OrderSellerGroup rows without re-querying Product
    * (which could have changed ownership — never, in practice, but this
    * snapshot's whole purpose is to never depend on that not happening). */

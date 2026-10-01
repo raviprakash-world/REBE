@@ -316,7 +316,7 @@ export default function AccountOrderDetail() {
         <Button variant="outline" size="sm" icon={<MessageCircle size={14} />} onClick={handleContactSupport}>
           Contact support
         </Button>
-        <ShareButtons title={`My Rebe order ${order.id}`} url={typeof window !== 'undefined' ? window.location.href : ''} />
+        <ShareButtons title={`My Rebekart order ${order.id}`} url={typeof window !== 'undefined' ? window.location.href : ''} />
       </div>
 
       <div className="mb-12">

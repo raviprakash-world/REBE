@@ -287,7 +287,7 @@ describe('AnalyticsService.getSellerStats', () => {
 });
 
 describe('AnalyticsService.getMarketplaceGmv', () => {
-  it('splits GMV by sellerId null (Rebe) vs set (marketplace seller), and sums commission only from seller groups', async () => {
+  it('splits GMV by sellerId null (Rebekart) vs set (marketplace seller), and sums commission only from seller groups', async () => {
     const { prisma, service } = createDeps();
     prisma.orderSellerGroup.findMany.mockResolvedValue([
       {
@@ -341,7 +341,7 @@ describe('AnalyticsService.getMarketplaceGmv', () => {
 });
 
 describe('AnalyticsService.getTopSellers', () => {
-  it("excludes Rebe's own group (sellerId null) and attaches real seller display names", async () => {
+  it("excludes Rebekart's own group (sellerId null) and attaches real seller display names", async () => {
     const { prisma, service } = createDeps();
     prisma.orderSellerGroup.groupBy.mockResolvedValue([
       { sellerId: 'seller-a', _sum: { subtotal: { toNumber: () => 500 } } },

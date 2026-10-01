@@ -16,7 +16,7 @@ export interface CartItem {
   quantity: number;
   /** Stock ceiling snapshotted at add-time. */
   maxQuantity: number;
-  /** Marketplace Phase 16 — null for a Rebe-owned line, or when the real cart API is off (mock cart lines never set this). */
+  /** Marketplace Phase 16 — null for a Rebekart-owned line, or when the real cart API is off (mock cart lines never set this). */
   sellerName?: string | null;
   /** Primary product photo from the real cart API; local-cart lines fall back to the catalog lookup in CartLineItem. */
   imageUrl?: string | null;

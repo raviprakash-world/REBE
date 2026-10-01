@@ -76,7 +76,7 @@ export class AddressInputDto {
   // addresses in practice — this makes that honest instead of silently
   // accepting an address that would fail downstream.
   @ApiProperty({ enum: ['IN'], example: 'IN' })
-  @IsIn(['IN'], { message: 'Rebe currently ships within India only.' })
+  @IsIn(['IN'], { message: 'Rebekart currently ships within India only.' })
   country!: string;
 
   @ApiProperty({ example: '560001' })

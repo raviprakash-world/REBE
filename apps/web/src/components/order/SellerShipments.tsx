@@ -20,7 +20,7 @@ export function SellerShipments({ groups }: { groups: OrderShipmentGroup[] }) {
       {groups.map((group) => (
         <Card key={group.id} variant="flat" className="p-4">
           <div className="flex items-center justify-between gap-3 mb-3">
-            <h3 className="text-sm font-medium text-ink">{group.sellerName ?? 'Rebe'}</h3>
+            <h3 className="text-sm font-medium text-ink">{group.sellerName ?? 'Rebekart'}</h3>
             <Tag tone={orderStatusTone[group.status]}>{group.status.replace('-', ' ')}</Tag>
           </div>
 

@@ -52,7 +52,7 @@ export interface ShipmentItem {
 }
 
 export interface CreateShipmentInput {
-  /** Our own order id, passed through so a support agent can correlate a Shiprocket dashboard entry back to a Rebe order without a database lookup — same reasoning as PaymentProviderClient's CreateGatewayOrderInput.receipt. */
+  /** Our own order id, passed through so a support agent can correlate a Shiprocket dashboard entry back to a Rebekart order without a database lookup — same reasoning as PaymentProviderClient's CreateGatewayOrderInput.receipt. */
   orderId: string;
   orderDate: Date;
   shippingAddress: ShipmentAddress;

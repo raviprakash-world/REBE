@@ -16,7 +16,7 @@ export default function SellerProducts() {
     <div>
       <PageHeader
         title="Your products"
-        description="Everything you're selling on Rebe — draft, in review, live, or archived."
+        description="Everything you're selling on Rebekart — draft, in review, live, or archived."
         action={
           <Link to="/seller/products/new">
             <Button type="button" variant="primary" size="sm">

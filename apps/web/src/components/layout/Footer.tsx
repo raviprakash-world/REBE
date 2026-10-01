@@ -92,7 +92,7 @@ export function Footer() {
           </div>
         </div>
         <div className="mt-14 pt-6 border-t border-stone/15 flex flex-col sm:flex-row justify-between gap-2 text-xs text-cream/65">
-          <p>&copy; {new Date().getFullYear()} Rebe. Portfolio project — not a real store.</p>
+          <p>&copy; {new Date().getFullYear()} Rebekart. Portfolio project — not a real store.</p>
           <p>Made for demonstration purposes.</p>
         </div>
       </Container>

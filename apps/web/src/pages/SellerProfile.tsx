@@ -266,7 +266,7 @@ export default function SellerProfile() {
         </div>
         <FormField label="GSTIN (optional)" error={errors.gstin?.message} {...register('gstin')} />
         <p className="text-xs text-ink-soft -mt-3">
-          Only if you're GST-registered. It's visible to Rebe admins for verification, not shown to customers, and
+          Only if you're GST-registered. It's visible to Rebekart admins for verification, not shown to customers, and
           providing it does not by itself make your sales GST-compliant.
         </p>
         <Button type="submit" variant="primary" disabled={updateMutation.isPending} className="self-start">

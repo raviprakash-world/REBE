@@ -56,7 +56,7 @@ export interface ProductSellerRecord {
   address?: { city: string; state: string } | null;
 }
 
-/** Where Rebe-owned products dispatch from (matches the "Store Pickup at our Bengaluru studio" copy). */
+/** Where Rebekart-owned products dispatch from (matches the "Store Pickup at our Bengaluru studio" copy). */
 export const FOLIA_ORIGIN = { city: 'Bengaluru', state: 'Karnataka' } as const;
 
 export interface ProductRecord {
@@ -80,7 +80,7 @@ export interface ProductRecord {
   images?: ProductImageRecord[];
   createdAt: Date;
   deletedAt: Date | null;
-  /** Marketplace Phase 16 — null for a Rebe-owned product, matching Product.sellerId's own nullability exactly. */
+  /** Marketplace Phase 16 — null for a Rebekart-owned product, matching Product.sellerId's own nullability exactly. */
   seller: ProductSellerRecord | null;
 }
 
@@ -168,7 +168,7 @@ export function toPublicProduct(product: ProductRecord) {
           displayName: product.seller.displayName,
         }
       : undefined,
-    // null = Rebe-owned (dispatches from FOLIA_ORIGIN); undefined = the
+    // null = Rebekart-owned (dispatches from FOLIA_ORIGIN); undefined = the
     // seller relation wasn't loaded for this query, or the seller has no
     // address on file — either way, say nothing rather than guess.
     shipsFrom:

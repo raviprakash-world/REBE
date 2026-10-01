@@ -4,7 +4,7 @@ import { computeGstBreakdown } from '@/utils/gst';
 import type { Order } from '@/types/order';
 
 const COMPANY = {
-  name: 'Rebe',
+  name: 'Rebekart',
   tagline: 'Living design for the home.',
   address: '412 MG Road, Bengaluru, Karnataka 560001',
   state: 'Karnataka',

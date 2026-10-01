@@ -31,7 +31,7 @@ export function ProductCard({ product, className }: ProductCardProps) {
   const locationState = useLocationStore((s) => s.location?.state);
   const inYourState = !!locationState && product.shipsFrom?.state.toLowerCase() === locationState.toLowerCase();
   const freeDelivery = product.price >= FREE_SHIPPING_THRESHOLD;
-  const sellerName = product.seller?.displayName ?? 'Rebe';
+  const sellerName = product.seller?.displayName ?? 'Rebekart';
 
   return (
     <article className={cn('group relative flex flex-col', className)}>

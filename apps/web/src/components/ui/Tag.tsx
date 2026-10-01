@@ -19,7 +19,7 @@ const toneStyles: Record<TagTone, string> = {
 };
 
 /**
- * Rebe's signature element: a small die-cut label referencing physical plant
+ * Rebekart's signature element: a small die-cut label referencing physical plant
  * tags. Used for category badges, "new" / "sale" markers, and price tags on
  * product cards. Deliberately not a generic pill — has a notch cut into one
  * side, like a punched paper tag.

@@ -162,7 +162,7 @@ export const addressSchema = z
       ctx.addIssue({
         code: 'custom',
         path: ['country'],
-        message: 'Rebe currently ships within India only.',
+        message: 'Rebekart currently ships within India only.',
       });
     }
     if (!isValidPostalCode(data.postalCode)) {
