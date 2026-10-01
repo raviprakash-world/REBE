@@ -133,7 +133,7 @@ Render dashboard → **folia-api** → **Environment**. Values marked `sync: fal
 | `FRONTEND_URL` | No | Same; used for links inside emails | Set — update for a custom domain |
 | `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` | **Yes** | Section 4 | **Not set** |
 | `RESEND_API_KEY` | **Yes** | Section 5 | **Not set** |
-| `RESEND_FROM_EMAIL` | No | Your verified sender, e.g. `Folia <orders@your-domain.com>` | Default is the Resend sandbox sender |
+| `RESEND_FROM_EMAIL` | No | Your verified sender, e.g. `Rebekart <orders@your-domain.com>` | Default is the Resend sandbox sender |
 | `SHIPROCKET_EMAIL` / `SHIPROCKET_PASSWORD` | **Yes** | Section 6 | **Not set** |
 | `SHIPROCKET_PICKUP_LOCATION` / `SHIPROCKET_PICKUP_PINCODE` | No | Section 6 | **Not set** |
 
@@ -184,7 +184,7 @@ Not configured. The app sends: email verification, password reset, order confirm
 
 1. Create a Resend account. **Domains → Add Domain** for a domain you own; add the DNS records (SPF, DKIM) at your DNS host; wait for **Verified**.
 2. **API Keys → Create API Key** with **sending** access only.
-3. Render env: `RESEND_API_KEY` = the key; `RESEND_FROM_EMAIL` = `Folia <orders@your-domain.com>`. (The default `onboarding@resend.dev` only delivers to your own Resend account address.)
+3. Render env: `RESEND_API_KEY` = the key; `RESEND_FROM_EMAIL` = `Rebekart <orders@your-domain.com>`. (The default `onboarding@resend.dev` only delivers to your own Resend account address.)
 4. Confirm `FRONTEND_URL` is your real storefront URL (verification/reset links are built from it).
 5. Test and check the **actual inbox** (also spam): register a new customer (verification), forgot-password (reset), place a COD order (confirmation), cancel an order.
 6. Do not claim email works until each has arrived. Evidence: Resend dashboard → Emails log + a screenshot of the received message.
